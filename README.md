@@ -138,7 +138,7 @@ A measured 20-minute English talk contained **2,935 spoken English words** and 1
 
 If all input is billed as cache miss, input costs about $0.0046 and output costs about $0.0010 to $0.0013, for a total of about $0.0056 to $0.0059. When much of the repeated system prompt hits DeepSeek's automatic best-effort cache, a realistic lower end is about $0.002 to $0.003. A practical estimate for fully translating this talk is therefore **$0.002 to $0.006 USD, about ¥0.02 to ¥0.04**.
 
-Translation is lazy and progressive. Cached segments are reused, and only rows you request by scrolling into them incur calls. Retries, provider behavior, and pricing changes can increase the final cost.
+Translation is lazy and progressive. Only rows in the current Transcript viewport or its small 120px prefetch band are eligible for new calls; queued rows dropped after scrolling away are not sent, and no background job translates the rest. Cached segments are reused. Retries, provider behavior, and pricing changes can increase the final cost.
 
 ## Remix it with your coding agent
 

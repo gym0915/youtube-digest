@@ -40,8 +40,10 @@ let currentTranscriptMode = "original";
 let translationGeneration = 0; // Invalidates responses from older UI modes/videos.
 let translationWorkCount = 0;
 let transcriptScrollObserver = null;
-// Stable keys include the video, source mode, language, and semantic segment ID.
+// Stable keys include the video, target language, and semantic segment ID.
 let transcriptParagraphCache = new Map();
+const transcriptTranslationInFlight = new Map();
+let transcriptCacheWriteChain = Promise.resolve();
 const TRANSLATION_MESSAGE_TIMEOUT_MS = 130_000;
 
 /**
@@ -579,8 +581,7 @@ async function startDigest(videoId, videoUrl) {
     analysisGeneration += 1;
     notesRequestGeneration += 1;
     invalidateExplanationPresentation();
-    if (transcriptScrollObserver) transcriptScrollObserver.disconnect();
-    transcriptScrollObserver = null;
+    stopTranscriptTranslationSession();
   }
 
   // Check cache for this video
@@ -1152,7 +1153,11 @@ function switchTab(tabName) {
   // Start/stop playback tracking based on which tab is active
   if (tabName === "transcript") {
     startPlaybackTracking();
+    if (currentTranscriptMode !== "original" && !activeTranslationQueue) {
+      translateTranscript();
+    }
   } else {
+    stopTranscriptTranslationSession();
     stopPlaybackTracking();
   }
 
@@ -1814,15 +1819,6 @@ async function loadFromCache(videoId) {
   }
 }
 
-/**
- * Updates the cache after enhance or translation operations.
- */
-async function updateCache() {
-  if (currentVideoId) {
-    await saveToCache(currentVideoId);
-  }
-}
-
 // ============================================================
 // NOTES
 // ============================================================
@@ -2313,8 +2309,21 @@ function getActiveTranscriptSegments() {
   return groupTranscriptEntries(currentTranscript || []);
 }
 
+function transcriptTranslationCacheKeyForVideo(videoId, segment) {
+  return `${videoId}:zh:semantic:${segment.id}`;
+}
+
 function transcriptTranslationCacheKey(segment) {
-  return `${currentVideoId}:zh:semantic:${segment.id}`;
+  return transcriptTranslationCacheKeyForVideo(currentVideoId, segment);
+}
+
+function stopTranscriptTranslationSession() {
+  activeTranslationQueue?.stop?.();
+  activeTranslationQueue = null;
+  if (transcriptScrollObserver) transcriptScrollObserver.disconnect();
+  transcriptScrollObserver = null;
+  translationWorkCount = 0;
+  setTranslatingSpinner(false);
 }
 
 function setTranscriptModeButtons(mode) {
@@ -2330,14 +2339,11 @@ async function handleTranscriptModeChange(mode) {
   if (mode === currentTranscriptMode) return;
 
   currentTranscriptMode = mode;
-  translationGeneration += 1;
-  translationWorkCount = 0;
-  setTranslatingSpinner(false);
-  if (transcriptScrollObserver) transcriptScrollObserver.disconnect();
-  transcriptScrollObserver = null;
   setTranscriptModeButtons(mode);
 
   if (mode === "original") {
+    translationGeneration += 1;
+    stopTranscriptTranslationSession();
     renderTranscript();
     return;
   }
@@ -2482,15 +2488,7 @@ function updateTranslatedRow(segment, index, alignedItem, generation) {
 
 let activeTranslationQueue = null;
 
-async function requestTranscriptTranslationBatch(
-  indices,
-  segments,
-  generation,
-  videoId,
-  mode,
-) {
-  const sourceBatch = indices.map((index) => segments[index]);
-  setTranslatingSpinner(true);
+async function executeTranscriptTranslationBatch(videoId, sourceBatch, videoTitle) {
   try {
     const result = await sendTranslationMessage({
       action: "translateContent",
@@ -2499,31 +2497,164 @@ async function requestTranscriptTranslationBatch(
       },
       contentType: "transcriptBatch",
       targetLanguage: "zh",
-      videoTitle: currentVideoTitle,
+      videoTitle,
     });
-
-    const isStale =
-      generation !== translationGeneration ||
-      videoId !== currentVideoId ||
-      mode !== currentTranscriptMode;
-    if (isStale) return;
 
     const responseSegments = result?.success
       ? result.translatedContent?.segments
       : [];
     const aligned = alignTranslatedSegmentBatch(sourceBatch, responseSegments);
-    aligned.forEach((item, batchIndex) => {
-      if (!result?.success) {
+    if (!result?.success) {
+      aligned.forEach((item) => {
         item.error = result?.error || "Translation failed.";
-      }
-      updateTranslatedRow(
-        sourceBatch[batchIndex],
-        indices[batchIndex],
-        item,
-        generation,
-      );
+      });
+    }
+    return aligned;
+  } catch (error) {
+    return sourceBatch.map((segment) => ({
+      id: segment.id,
+      text: "",
+      error: error.message || "Translation failed.",
+    }));
+  }
+}
+
+/**
+ * Reuses an already-running segment request when a mode/tab transition starts
+ * a new translation session. This prevents a bilingual switch from sending
+ * the same segment again while the Chinese request is still in flight.
+ */
+function getTranscriptTranslationPromises(videoId, sourceBatch, videoTitle) {
+  const promisesByKey = new Map();
+  const pending = [];
+
+  sourceBatch.forEach((segment) => {
+    const key = transcriptTranslationCacheKeyForVideo(videoId, segment);
+    const existing = transcriptTranslationInFlight.get(key);
+    if (existing) {
+      promisesByKey.set(key, existing);
+    } else {
+      pending.push({ key, segment });
+    }
+  });
+
+  if (pending.length) {
+    const pendingSegments = pending.map(({ segment }) => segment);
+    const operation = executeTranscriptTranslationBatch(
+      videoId,
+      pendingSegments,
+      videoTitle,
+    );
+
+    pending.forEach(({ key }, index) => {
+      let segmentPromise;
+      segmentPromise = operation
+        .then((aligned) =>
+          aligned[index] || {
+            id: pendingSegments[index].id,
+            text: "",
+            error: "Translation unavailable.",
+          },
+        )
+        .finally(() => {
+          if (transcriptTranslationInFlight.get(key) === segmentPromise) {
+            transcriptTranslationInFlight.delete(key);
+          }
+        });
+      transcriptTranslationInFlight.set(key, segmentPromise);
+      promisesByKey.set(key, segmentPromise);
     });
-    await updateCache();
+  }
+
+  return sourceBatch.map((segment) =>
+    promisesByKey.get(transcriptTranslationCacheKeyForVideo(videoId, segment)),
+  );
+}
+
+function rememberTranscriptTranslations(videoId, sourceBatch, aligned) {
+  const entries = [];
+  aligned.forEach((item, index) => {
+    if (!item?.text) return;
+    const key = transcriptTranslationCacheKeyForVideo(
+      videoId,
+      sourceBatch[index],
+    );
+    transcriptParagraphCache.set(key, item.text);
+    entries.push({ key, text: item.text });
+  });
+  return entries;
+}
+
+/**
+ * Persists by captured video ID so an old response can never be written into
+ * the video that happens to be open when the provider finally replies.
+ */
+function persistTranscriptTranslations(videoId, entries) {
+  if (!videoId || !entries.length) return Promise.resolve();
+
+  const write = transcriptCacheWriteChain
+    .catch(() => {})
+    .then(async () => {
+      const storageKey = `digest_${videoId}`;
+      const stored = await chrome.storage.local.get(storageKey);
+      const cached = stored[storageKey];
+      if (!cached) return;
+
+      const paragraphCache = { ...(cached.paragraphCache || {}) };
+      entries.forEach(({ key, text }) => {
+        paragraphCache[key] = text;
+      });
+      await chrome.storage.local.set({
+        [storageKey]: {
+          ...cached,
+          paragraphCache,
+          timestamp: Date.now(),
+        },
+      });
+    })
+    .catch((error) => {
+      console.error("Translation cache save error:", error);
+    });
+
+  transcriptCacheWriteChain = write;
+  return write;
+}
+
+async function requestTranscriptTranslationBatch(
+  indices,
+  segments,
+  generation,
+  videoId,
+  mode,
+  videoTitle,
+) {
+  const sourceBatch = indices.map((index) => segments[index]);
+  setTranslatingSpinner(true);
+  try {
+    const aligned = await Promise.all(
+      getTranscriptTranslationPromises(videoId, sourceBatch, videoTitle),
+    );
+    const cacheEntries = rememberTranscriptTranslations(
+      videoId,
+      sourceBatch,
+      aligned,
+    );
+
+    const isStale =
+      generation !== translationGeneration ||
+      videoId !== currentVideoId ||
+      mode !== currentTranscriptMode;
+    if (!isStale) {
+      aligned.forEach((item, batchIndex) => {
+        updateTranslatedRow(
+          sourceBatch[batchIndex],
+          indices[batchIndex],
+          item,
+          generation,
+        );
+      });
+    }
+    await persistTranscriptTranslations(videoId, cacheEntries);
   } catch (error) {
     if (generation !== translationGeneration) return;
     sourceBatch.forEach((segment, batchIndex) => {
@@ -2558,8 +2689,9 @@ function retryTranslationSegment(index, generation) {
 }
 
 /**
- * Renders immediately, translates the first small batch, then observes the
- * remaining rows. Batches are sequential so the provider is never flooded.
+ * Renders immediately, translates the current visible window, then observes
+ * rows as they enter the window. Batches are sequential so the provider is
+ * never flooded and offscreen queued work is discarded before dispatch.
  */
 async function translateTranscript() {
   const segments = getActiveTranscriptSegments();
@@ -2569,19 +2701,51 @@ async function translateTranscript() {
   const generation = translationGeneration;
   const videoId = currentVideoId;
   const mode = currentTranscriptMode;
-  if (transcriptScrollObserver) transcriptScrollObserver.disconnect();
+  const videoTitle = currentVideoTitle;
+  stopTranscriptTranslationSession();
 
   const rows = renderTranscriptModeRows(segments, mode);
   const queue = [];
   const queued = new Set();
+  const eligible = new Set();
   let processing = false;
+  let stopped = false;
+
+  const removeQueued = (index) => {
+    if (!queued.delete(index)) return;
+    const position = queue.indexOf(index);
+    if (position >= 0) queue.splice(position, 1);
+  };
 
   const processNext = async () => {
-    if (processing || queue.length === 0 || generation !== translationGeneration)
+    if (
+      stopped ||
+      processing ||
+      queue.length === 0 ||
+      generation !== translationGeneration
+    )
       return;
+
+    const indices = [];
+    while (queue.length && indices.length < 3) {
+      const index = queue.shift();
+      queued.delete(index);
+      if (!eligible.has(index)) continue;
+      if (
+        transcriptParagraphCache.has(
+          transcriptTranslationCacheKeyForVideo(videoId, segments[index]),
+        )
+      ) {
+        continue;
+      }
+      indices.push(index);
+    }
+    if (!indices.length) {
+      if (queue.length && generation === translationGeneration) processNext();
+      return;
+    }
+
     processing = true;
-    const indices = queue.splice(0, 3);
-    indices.forEach((index) => queued.delete(index));
     try {
       await requestTranscriptTranslationBatch(
         indices,
@@ -2589,17 +2753,25 @@ async function translateTranscript() {
         generation,
         videoId,
         mode,
+        videoTitle,
       );
     } finally {
       processing = false;
-      if (queue.length && generation === translationGeneration) processNext();
+      if (
+        !stopped &&
+        queue.length &&
+        generation === translationGeneration
+      ) {
+        processNext();
+      }
     }
   };
 
   const enqueue = (index, force = false) => {
-    if (!Number.isInteger(index) || !segments[index]) return;
+    if (stopped || !Number.isInteger(index) || !segments[index]) return;
+    if (!eligible.has(index)) return;
     const cached = transcriptParagraphCache.has(
-      transcriptTranslationCacheKey(segments[index]),
+      transcriptTranslationCacheKeyForVideo(videoId, segments[index]),
     );
     if ((!force && cached) || queued.has(index)) return;
     queue.push(index);
@@ -2608,29 +2780,43 @@ async function translateTranscript() {
     // worker starts, producing one small contextual multi-segment request.
     Promise.resolve().then(processNext);
   };
-  activeTranslationQueue = { enqueue };
+
+  const stop = () => {
+    stopped = true;
+    queue.length = 0;
+    queued.clear();
+    eligible.clear();
+  };
+  activeTranslationQueue = { enqueue, stop };
 
   transcriptScrollObserver = new IntersectionObserver(
     (observerEntries) => {
       observerEntries
-        .filter((entry) => entry.isIntersecting)
         .sort(
           (a, b) =>
             Number(a.target.dataset.segmentIndex) -
             Number(b.target.dataset.segmentIndex),
         )
-        .forEach((entry) => enqueue(Number(entry.target.dataset.segmentIndex)));
+        .forEach((entry) => {
+          const index = Number(entry.target.dataset.segmentIndex);
+          if (entry.isIntersecting) {
+            eligible.add(index);
+            enqueue(index);
+          } else {
+            eligible.delete(index);
+            removeQueued(index);
+          }
+        });
     },
     {
       root: document.getElementById("contentArea"),
-      rootMargin: "320px 0px",
+      rootMargin: "120px 0px",
       threshold: 0,
     },
   );
 
-  rows.forEach((row, index) => {
+  rows.forEach((row) => {
     if (!row.classList.contains("translated")) transcriptScrollObserver.observe(row);
-    if (index < 3) enqueue(index);
   });
 }
 
@@ -2649,6 +2835,9 @@ globalThis.__YTD_TRANSCRIPT_TESTING__ = {
   groupTranscriptEntries,
   splitOversizedThought,
   alignTranslatedSegmentBatch,
+  transcriptTranslationCacheKeyForVideo,
+  getTranscriptTranslationPromises,
+  persistTranscriptTranslations,
   renderSubtitleInlineMarkup,
   renderTranscriptSegmentContent,
 };

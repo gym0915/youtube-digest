@@ -11,6 +11,7 @@ function loadSidepanelHelpers({
   sendMessage = () => Promise.resolve({}),
   setTimeoutImpl = () => 0,
   clearTimeoutImpl = () => {},
+  storageLocal = { get: async () => ({}), set: async () => {} },
 } = {}) {
   const listeners = { addListener() {} };
   const sandbox = {
@@ -48,6 +49,7 @@ function loadSidepanelHelpers({
     },
     chrome: {
       runtime: { onMessage: listeners, sendMessage },
+      storage: { local: storageLocal },
       windows: { getCurrent: () => Promise.resolve({ id: 1 }) },
       tabs: { onUpdated: listeners, onActivated: listeners },
     },
@@ -255,6 +257,85 @@ test("structured translation batches align by stable ID and expose missing fallb
   assert.equal(aligned[0].text, "");
   assert.match(aligned[0].error, /unavailable/i);
   assert.equal(aligned[1].text, "\u7b2c\u4e8c\u4e2a\u5b8c\u6574\u53e5\u5b50\u3002");
+});
+
+test("Chinese and bilingual modes share one target cache and in-flight request", async () => {
+  let resolveRequest;
+  const requests = [];
+  const sidepanel = loadSidepanelHelpers({
+    sendMessage: (message) => {
+      requests.push(message);
+      return new Promise((resolve) => {
+        resolveRequest = resolve;
+      });
+    },
+  });
+  const source = [{ id: "segment-0-0", text: "Original sentence." }];
+
+  const first = sidepanel.getTranscriptTranslationPromises(
+    "video-1",
+    source,
+    "Video",
+  );
+  const second = sidepanel.getTranscriptTranslationPromises(
+    "video-1",
+    source,
+    "Video",
+  );
+
+  assert.equal(requests.length, 1);
+  assert.equal(
+    sidepanel.transcriptTranslationCacheKeyForVideo("video-1", source[0]),
+    "video-1:zh:semantic:segment-0-0",
+  );
+
+  resolveRequest({
+    success: true,
+    translatedContent: {
+      segments: [{ id: "segment-0-0", text: "\u4e2d\u6587\u8bd1\u6587\u3002" }],
+    },
+  });
+  const [firstResult] = await Promise.all(first);
+  const [secondResult] = await Promise.all(second);
+  assert.equal(firstResult.text, "\u4e2d\u6587\u8bd1\u6587\u3002");
+  assert.equal(secondResult.text, "\u4e2d\u6587\u8bd1\u6587\u3002");
+});
+
+test("translation cache writes use the captured video instead of the current tab", async () => {
+  const writes = [];
+  const sidepanel = loadSidepanelHelpers({
+    storageLocal: {
+      get: async (key) => ({
+        [key]: {
+          transcript: [{ start: 0, text: "Original sentence." }],
+          paragraphCache: {},
+          timestamp: 1,
+        },
+      }),
+      set: async (value) => writes.push(value),
+    },
+  });
+
+  await sidepanel.persistTranscriptTranslations("old-video", [
+    { key: "old-video:zh:semantic:segment-0-0", text: "\u65e7\u89c6\u9891\u8bd1\u6587" },
+  ]);
+
+  assert.equal(writes.length, 1);
+  assert.equal(
+    writes[0]["digest_old-video"].paragraphCache[
+      "old-video:zh:semantic:segment-0-0"
+    ],
+    "\u65e7\u89c6\u9891\u8bd1\u6587",
+  );
+});
+
+test("translation scheduling is visible-window only and pauses unsent work off-tab", () => {
+  const js = read("sidepanel.js");
+  assert.match(js, /rootMargin: "120px 0px"/);
+  assert.doesNotMatch(js, /if \(index < 3\) enqueue\(index\)/);
+  assert.match(js, /if \(!eligible\.has\(index\)\) continue;/);
+  assert.match(js, /activeTranslationQueue = \{ enqueue, stop \}/);
+  assert.match(js, /stopTranscriptTranslationSession\(\);[\s\S]*stopPlaybackTracking\(\);/);
 });
 
 test("translated-only omits English while bilingual renders aligned English and Chinese", () => {
