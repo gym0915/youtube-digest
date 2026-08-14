@@ -1,0 +1,28 @@
+{
+  "viewports": [320, 390, 480],
+  "controlStates": ["welcome", "default", "hover", "focus", "selected", "disabled"],
+  "video": {
+    "title": "A deliberately long video title that exercises the two-line context limit without removing the learning context from a narrow Side Panel",
+    "channel": "A deliberately long channel name that verifies the single-line ellipsis rule"
+  },
+  "transcript": {
+    "mode": "original",
+    "timestamp": "12:34",
+    "text": "A deliberately long original transcript sentence preserves word boundaries and remains readable alongside a fixed-width timestamp at every required panel width."
+  },
+  "chapter": {
+    "timestamp": "12:34",
+    "title": "A deliberately long chapter title keeps its reading priority while the timestamp remains visible",
+    "summary": "This fixed summary verifies that content-driven card height is available instead of a clipped or fixed-height presentation."
+  },
+  "quote": {
+    "timestamp": "18:02",
+    "text": "A fixed long quote checks that the Copy and Note action group wraps instead of abbreviating either existing action."
+  },
+  "note": {
+    "timestamp": "24:48",
+    "videoTitle": "A deliberately long cross-video title checks the single-line note metadata limit",
+    "text": "A fixed long note verifies natural wrapping for saved learning content.",
+    "actions": ["Text", "Timestamp", "Play"]
+  }
+}

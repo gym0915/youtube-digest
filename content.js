@@ -24,12 +24,195 @@ const debugLog = (...args) => {
 
 let ytdNoteButton = null;
 let ytdNoteButtonTimer = null;
+let ytdNoteButtonFeedbackTimer = null;
+let ytdNoteToastDismissTimer = null;
 let ytdNoteKeyboardListenerAdded = false;
 let ytdNoteButtonRetryTimer = null;
 let ytdDigestButton = null;
 let digestButtonObserver = null;
 let digestButtonReconcileTimer = null;
 let digestButtonResizeListenerAdded = false;
+// A navigation invalidates every pending host-page response for the old video.
+// This only guards visual writes; it does not change the existing save request.
+let hostPageLifecycleEpoch = 0;
+
+// The host page cannot consume an extension stylesheet without changing the
+// manifest. Keep its Token scope attached only to our existing injected UI.
+function ensureHostDesignSystemStyles() {
+  if (!document.head || document.getElementById("ytd-design-system-tokens")) {
+    return;
+  }
+
+  const style = document.createElement("style");
+  style.id = "ytd-design-system-tokens";
+  style.textContent = `
+    :is(#ytd-digest-button, #ytd-note-button, #ytd-note-toast) {
+      /* ref.* */
+      --ref-color-brand-red: #ff0000;
+      --ref-color-brand-red-strong: #cc0000;
+      --ref-color-brand-red-hover: #a30000;
+      --ref-color-surface-canvas: #ffffff;
+      --ref-color-surface-subtle: #f9f9f9;
+      --ref-color-surface-control: #f2f2f2;
+      --ref-color-surface-hover: #e5e5e5;
+      --ref-color-text-primary: #0f0f0f;
+      --ref-color-text-secondary: #606060;
+      --ref-color-text-muted: #909090;
+      --ref-color-state-success-foreground: #1b6e4f;
+      --ref-color-state-success-surface: #eaf6f0;
+      --ref-color-state-success-border: #a9d8c1;
+      --ref-color-state-error-foreground: #b3261e;
+      --ref-color-state-error-surface: #fdecea;
+      --ref-color-state-error-border: #e7a7a1;
+      --ref-color-state-warning-foreground: #8a5a00;
+      --ref-color-state-warning-surface: #fff4d6;
+      --ref-color-state-warning-border: #e8c66a;
+      --ref-color-state-info-foreground: #0b5cad;
+      --ref-color-state-info-surface: #eaf2fb;
+      --ref-color-state-info-border: #a9c7ee;
+      --ref-color-state-disabled-foreground: #606060;
+      --ref-color-state-disabled-surface: #f2f2f2;
+      --ref-color-state-disabled-border: #d0d0d0;
+      --ref-color-state-disabled-indicator: #909090;
+      --ref-color-focus-ring: #005fcc;
+      --ref-color-playback-surface: rgba(255, 0, 0, 0.08);
+      --ref-space-2: 8px;
+      --ref-space-3: 10px;
+      --ref-space-4: 12px;
+      --ref-space-5: 14px;
+      --ref-space-6: 16px;
+      --ref-space-7: 24px;
+      --ref-radius-xs: 6px;
+      --ref-radius-control: 8px;
+      --ref-radius-card: 12px;
+      --ref-radius-overlay: 16px;
+      --ref-radius-pill: 9999px;
+      --ref-elevation-raised: 0 2px 8px rgba(0, 0, 0, 0.12);
+      --ref-elevation-overlay: 0 12px 32px rgba(0, 0, 0, 0.2);
+      --ref-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      --ref-font-reading: var(--ref-font-ui);
+      --ref-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
+      --ref-icon-size-14: 14px;
+      --ref-icon-hit-area: 36px;
+
+      /* sys.* */
+      --sys-brand-mark: var(--ref-color-brand-red);
+      --sys-brand-strong: var(--ref-color-brand-red-strong);
+      --sys-action-primary-bg: var(--ref-color-brand-red-strong);
+      --sys-action-primary-fg: var(--ref-color-surface-canvas);
+      --sys-action-primary-hover: var(--ref-color-brand-red-hover);
+      --sys-surface-canvas: var(--ref-color-surface-canvas);
+      --sys-surface-subtle: var(--ref-color-surface-subtle);
+      --sys-surface-control: var(--ref-color-surface-control);
+      --sys-surface-hover: var(--ref-color-surface-hover);
+      --sys-text-primary: var(--ref-color-text-primary);
+      --sys-text-secondary: var(--ref-color-text-secondary);
+      --sys-text-muted: var(--ref-color-text-muted);
+      --sys-border-default: var(--ref-color-surface-hover);
+      --sys-border-strong: var(--ref-color-state-disabled-border);
+      --sys-border-interactive: var(--ref-color-brand-red-strong);
+      --sys-state-success-foreground: var(--ref-color-state-success-foreground);
+      --sys-state-success-surface: var(--ref-color-state-success-surface);
+      --sys-state-success-border: var(--ref-color-state-success-border);
+      --sys-state-success-indicator: var(--ref-color-state-success-foreground);
+      --sys-state-error-foreground: var(--ref-color-state-error-foreground);
+      --sys-state-error-surface: var(--ref-color-state-error-surface);
+      --sys-state-error-border: var(--ref-color-state-error-border);
+      --sys-state-error-indicator: var(--ref-color-state-error-foreground);
+      --sys-state-warning-foreground: var(--ref-color-state-warning-foreground);
+      --sys-state-warning-surface: var(--ref-color-state-warning-surface);
+      --sys-state-warning-border: var(--ref-color-state-warning-border);
+      --sys-state-warning-indicator: var(--ref-color-state-warning-foreground);
+      --sys-state-info-foreground: var(--ref-color-state-info-foreground);
+      --sys-state-info-surface: var(--ref-color-state-info-surface);
+      --sys-state-info-border: var(--ref-color-state-info-border);
+      --sys-state-info-indicator: var(--ref-color-state-info-foreground);
+      --sys-state-disabled-foreground: var(--ref-color-state-disabled-foreground);
+      --sys-state-disabled-surface: var(--ref-color-state-disabled-surface);
+      --sys-state-disabled-border: var(--ref-color-state-disabled-border);
+      --sys-state-disabled-indicator: var(--ref-color-state-disabled-indicator);
+      --sys-state-focus-ring-color: var(--ref-color-focus-ring);
+      --sys-state-focus-ring-width: 2px;
+      --sys-state-focus-ring-offset: 2px;
+      --sys-interaction-hover: var(--ref-color-surface-subtle);
+      --sys-interaction-pressed: var(--ref-color-surface-hover);
+      --sys-interaction-selected: var(--ref-color-surface-control);
+      --sys-interaction-playback-surface: var(--ref-color-playback-surface);
+      --sys-interaction-playback-indicator: var(--ref-color-brand-red-strong);
+      --sys-interaction-loading-indicator: var(--ref-color-brand-red-strong);
+      --sys-layout-inline-gap: var(--ref-space-2);
+      --sys-layout-control-gap: var(--ref-space-4);
+      --sys-layout-panel-inset: var(--ref-space-6);
+      --sys-elevation-raised: var(--ref-elevation-raised);
+      --sys-elevation-overlay: var(--ref-elevation-overlay);
+      --sys-shape-badge: var(--ref-radius-xs);
+      --sys-shape-control: var(--ref-radius-control);
+      --sys-shape-card: var(--ref-radius-card);
+      --sys-shape-overlay: var(--ref-radius-overlay);
+      --sys-shape-pill: var(--ref-radius-pill);
+      --sys-font-ui: var(--ref-font-ui);
+      --sys-font-reading: var(--ref-font-reading);
+      --sys-font-mono: var(--ref-font-mono);
+      --sys-type-body: 400 14px/1.6 var(--sys-font-reading);
+      --sys-type-label: 500 13px/1.4 var(--sys-font-ui);
+      --sys-type-meta: 400 12px/1.45 var(--sys-font-ui);
+      --sys-icon-size: var(--ref-icon-size-14);
+      --sys-icon-hit-area: var(--ref-icon-hit-area);
+
+      /* comp.* */
+      --comp-host-action-digest-bg: var(--sys-action-primary-bg);
+      --comp-host-action-note-bg: var(--sys-action-primary-bg);
+      --comp-host-action-fg: var(--sys-action-primary-fg);
+      --comp-host-action-radius: var(--sys-shape-pill);
+      --comp-host-action-hit-area: var(--sys-icon-hit-area);
+      --comp-toast-bg: var(--sys-surface-canvas);
+      --comp-toast-border: var(--sys-border-default);
+      --comp-toast-radius: var(--sys-shape-overlay);
+    }
+
+    #ytd-digest-button:focus-visible,
+    #ytd-note-button:focus-visible,
+    #ytd-note-toast a:focus-visible {
+      outline: var(--sys-state-focus-ring-width) solid var(--sys-state-focus-ring-color) !important;
+      outline-offset: var(--sys-state-focus-ring-offset) !important;
+    }
+
+    #ytd-digest-button:active {
+      background: var(--sys-action-primary-hover) !important;
+      box-shadow: none !important;
+    }
+
+    #ytd-note-button[data-note-state="saved"] {
+      background: var(--sys-state-success-surface) !important;
+      border: 1px solid var(--sys-state-success-border) !important;
+      color: var(--sys-state-success-foreground) !important;
+      box-shadow: var(--sys-elevation-raised) !important;
+    }
+
+    #ytd-note-button[data-note-state="error"] {
+      background: var(--sys-state-error-surface) !important;
+      border: 1px solid var(--sys-state-error-border) !important;
+      color: var(--sys-state-error-foreground) !important;
+      box-shadow: var(--sys-elevation-raised) !important;
+    }
+
+    #ytd-note-button[data-note-state="saving"] {
+      cursor: progress !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #ytd-digest-button,
+      #ytd-note-button,
+      #ytd-note-toast {
+        animation: none !important;
+        scroll-behavior: auto !important;
+        transition: none !important;
+        transform: none !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // ============================================================
 // INITIALIZATION
@@ -228,34 +411,34 @@ function findDigestButtonHost() {
 }
 
 function createDigestButton() {
+  ensureHostDesignSystemStyles();
   const digestButton = document.createElement("button");
   digestButton.id = "ytd-digest-button";
   digestButton.type = "button";
   digestButton.setAttribute("aria-label", "Open YouTube Digest");
   digestButton.innerHTML = `
-    <span class="ytd-digest-icon" style="font-size: 11px;">▶</span>
+    <span class="ytd-digest-icon" style="font-size: var(--sys-icon-size);">▶</span>
     <span class="ytd-digest-label">Digest</span>
   `;
 
-  // Style the button — rounded pill in our terracotta accent, sized to sit
-  // comfortably among YouTube's native action buttons.
+  // The host keeps its native placement; only its visual contract is tokenized.
   digestButton.style.cssText = `
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 0 18px;
-    height: 36px;
+    gap: var(--sys-layout-inline-gap);
+    padding: 0 var(--sys-layout-panel-inset);
+    height: var(--comp-host-action-hit-area);
     border: none;
-    border-radius: 18px;
-    background: #c8674f;
-    color: white;
-    font-family: "Roboto", "Arial", sans-serif;
-    font-size: 14px;
+    border-radius: var(--comp-host-action-radius);
+    background: var(--comp-host-action-digest-bg);
+    color: var(--comp-host-action-fg);
+    font-family: var(--sys-font-ui);
+    font-size: var(--sys-icon-size);
     font-weight: 600;
     cursor: pointer;
-    margin-right: 8px;
-    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
-    box-shadow: 0 2px 8px rgba(200, 103, 79, 0.3);
+    margin-right: var(--sys-layout-inline-gap);
+    transition: background 0.2s, box-shadow 0.2s;
+    box-shadow: var(--sys-elevation-raised);
     flex: 0 0 auto;
     align-self: center;
     width: max-content;
@@ -266,13 +449,11 @@ function createDigestButton() {
 
   // Hover effects
   digestButton.addEventListener("mouseenter", () => {
-    digestButton.style.background = "#b25742";
-    digestButton.style.transform = "scale(1.02)";
+    digestButton.style.background = "var(--sys-action-primary-hover)";
   });
 
   digestButton.addEventListener("mouseleave", () => {
-    digestButton.style.background = "#c8674f";
-    digestButton.style.transform = "scale(1)";
+    digestButton.style.background = "var(--comp-host-action-digest-bg)";
   });
 
   // Click handler — open the side panel
@@ -401,6 +582,7 @@ function setupButtonObserver() {
 function injectNoteButton() {
   // Don't inject if we're not on a video page
   if (!window.location.pathname.includes("/watch")) return;
+  ensureHostDesignSystemStyles();
 
   // Don't inject if button already exists and is properly tracked.
   // If a stale button exists (e.g., from a previous content-script instance),
@@ -438,40 +620,37 @@ function injectNoteButton() {
 
   debugLog("[YouTube Digest Content] Injecting note button");
 
-  // Create the note button — a soft rounded pill that floats over the player
+  // Create the Note control in the existing player-layer location.
   const noteButton = document.createElement("button");
   noteButton.id = "ytd-note-button";
-  noteButton.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="margin-right: 7px;">
-      <path d="M12 20h9"></path>
-      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-    </svg>
-    <span>Note</span>
-  `;
+  noteButton.type = "button";
+  noteButton.setAttribute("aria-live", "polite");
+  noteButton.setAttribute("aria-atomic", "true");
+  noteButton.setAttribute("aria-hidden", "true");
+  noteButton.tabIndex = -1;
+  setNoteButtonState(noteButton, "idle");
 
-  // Soft rounded pill in the terracotta accent, with a gentle shadow.
-  // Start hidden; visibility is controlled by mouse activity.
+  // Start hidden; visibility is controlled by the existing mouse lifecycle.
   noteButton.style.cssText = `
     position: absolute;
-    top: 16px;
-    right: 16px;
+    top: var(--sys-layout-panel-inset);
+    right: var(--sys-layout-panel-inset);
     z-index: 9999;
     display: flex;
     align-items: center;
-    padding: 9px 16px;
-    background: #c8674f;
-    color: white;
+    min-height: var(--comp-host-action-hit-area);
+    padding: 9px var(--sys-layout-panel-inset);
+    background: var(--comp-host-action-note-bg);
+    color: var(--comp-host-action-fg);
     border: none;
-    border-radius: 999px;
-    font-family: system-ui, -apple-system, "Roboto", sans-serif;
-    font-size: 13px;
-    font-weight: 600;
+    border-radius: var(--comp-host-action-radius);
+    font: var(--sys-type-label);
     letter-spacing: 0.2px;
     cursor: pointer;
-    transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    transition: opacity 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     opacity: 0;
     pointer-events: none;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    box-shadow: var(--sys-elevation-raised);
   `;
 
   ytdNoteButton = noteButton;
@@ -496,15 +675,15 @@ function injectNoteButton() {
 
   // Hover effect — lift slightly
   noteButton.addEventListener("mouseenter", () => {
-    noteButton.style.background = "#b25742";
-    noteButton.style.boxShadow = "0 6px 18px rgba(0,0,0,0.35)";
-    noteButton.style.transform = "translateY(-1px)";
+    if (noteButton.dataset.noteState !== "idle") return;
+    noteButton.style.background = "var(--sys-action-primary-hover)";
+    noteButton.style.boxShadow = "var(--sys-elevation-overlay)";
   });
 
   noteButton.addEventListener("mouseleave", () => {
-    noteButton.style.background = "#c8674f";
-    noteButton.style.boxShadow = "0 4px 14px rgba(0,0,0,0.3)";
-    noteButton.style.transform = "translateY(0)";
+    if (noteButton.dataset.noteState !== "idle") return;
+    noteButton.style.background = "var(--comp-host-action-note-bg)";
+    noteButton.style.boxShadow = "var(--sys-elevation-raised)";
   });
 
   // Click handler — save the current moment as a note
@@ -522,13 +701,71 @@ function injectNoteButton() {
 function showNoteButton() {
   if (!ytdNoteButton) return;
   ytdNoteButton.style.opacity = "1";
-  ytdNoteButton.style.pointerEvents = "auto";
+  ytdNoteButton.setAttribute("aria-hidden", "false");
+  updateNoteButtonInteractivity(ytdNoteButton);
 }
 
 function hideNoteButton() {
   if (!ytdNoteButton) return;
   ytdNoteButton.style.opacity = "0";
-  ytdNoteButton.style.pointerEvents = "none";
+  ytdNoteButton.setAttribute("aria-hidden", "true");
+  updateNoteButtonInteractivity(ytdNoteButton);
+}
+
+function getNoteButtonMarkup(state) {
+  if (state === "saving") {
+    return '<span>Saving</span>';
+  }
+
+  if (state === "saved") {
+    return '<span aria-hidden="true">✓</span><span>Saved</span>';
+  }
+
+  if (state === "error") {
+    return '<span aria-hidden="true">!</span><span>Could not save note. Try again.</span>';
+  }
+
+  return `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="margin-right: var(--sys-layout-inline-gap);" aria-hidden="true">
+      <path d="M12 20h9"></path>
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+    </svg>
+    <span>Note</span>
+  `;
+}
+
+function updateNoteButtonInteractivity(noteButton) {
+  const isVisible = noteButton.getAttribute("aria-hidden") !== "true";
+  const isSaving = noteButton.dataset.noteState === "saving";
+  noteButton.style.pointerEvents = isVisible && !isSaving ? "auto" : "none";
+  noteButton.tabIndex = isVisible && !isSaving ? 0 : -1;
+}
+
+function setNoteButtonState(noteButton, state) {
+  const labels = {
+    idle: "Save a note at the current time",
+    saving: "Saving",
+    saved: "Note saved",
+    error: "Could not save note. Try again.",
+  };
+
+  noteButton.dataset.noteState = state;
+  noteButton.innerHTML = getNoteButtonMarkup(state);
+  noteButton.disabled = state === "saving";
+  noteButton.setAttribute("aria-busy", String(state === "saving"));
+  noteButton.setAttribute("aria-label", labels[state]);
+
+  if (state === "saving") {
+    noteButton.style.background = "var(--sys-interaction-loading-indicator)";
+  } else if (state === "saved") {
+    noteButton.style.background = "var(--sys-state-success-foreground)";
+  } else if (state === "error") {
+    noteButton.style.background = "var(--sys-state-error-foreground)";
+  } else {
+    noteButton.style.background = "var(--comp-host-action-note-bg)";
+  }
+
+  updateNoteButtonInteractivity(noteButton);
 }
 
 function resetNoteButtonTimer() {
@@ -586,12 +823,16 @@ async function saveCurrentNote() {
   const videoId = new URLSearchParams(window.location.search).get("v");
 
   const noteButton = ytdNoteButton;
-  const originalContent = noteButton ? noteButton.innerHTML : "";
+  const saveLifecycleEpoch = hostPageLifecycleEpoch;
+
+  // The keyboard shortcut can be pressed while a previous save is still
+  // pending. Keep one request and one feedback lifecycle per Note control.
+  if (noteButton?.dataset.noteState === "saving") {
+    return;
+  }
 
   if (noteButton) {
-    noteButton.innerHTML =
-      '<span style="letter-spacing: 0.2px;">SAVING...</span>';
-    noteButton.style.pointerEvents = "none";
+    setNoteButtonState(noteButton, "saving");
   }
 
   try {
@@ -603,34 +844,56 @@ async function saveCurrentNote() {
       channelName: videoInfo.channelName,
     });
 
+    // YouTube can replace the video while the existing save request is pending.
+    // Its result still belongs to storage, but it must not recreate old-video
+    // Saved/Error/Toast feedback in the newly adapted page.
+    if (saveLifecycleEpoch !== hostPageLifecycleEpoch) {
+      return;
+    }
+
     if (result.success) {
       if (noteButton) {
-        noteButton.innerHTML =
-          '<span style="letter-spacing: 0.2px;">SAVED</span>';
-        noteButton.style.background = "#7c8b6f";
+        setNoteButtonState(noteButton, "saved");
+        scheduleNoteButtonStateReset(noteButton, saveLifecycleEpoch);
       }
       showNoteSavedToast(result.note);
     } else {
       if (noteButton) {
-        noteButton.innerHTML =
-          '<span style="letter-spacing: 0.2px;">ERROR</span>';
+        setNoteButtonState(noteButton, "error");
+        scheduleNoteButtonStateReset(noteButton, saveLifecycleEpoch);
       }
       console.error("[YouTube Digest] Save note error:", result.error);
     }
   } catch (err) {
+    if (saveLifecycleEpoch !== hostPageLifecycleEpoch) {
+      return;
+    }
+
     if (noteButton) {
-      noteButton.innerHTML =
-        '<span style="letter-spacing: 0.2px;">ERROR</span>';
+      setNoteButtonState(noteButton, "error");
+      scheduleNoteButtonStateReset(noteButton, saveLifecycleEpoch);
     }
     console.error("[YouTube Digest] Save note exception:", err);
   }
+}
 
-  setTimeout(() => {
-    if (noteButton) {
-      noteButton.innerHTML = originalContent;
-      noteButton.style.background = "#c8674f";
-      noteButton.style.pointerEvents = "auto";
+// Saved and error are brief acknowledgements, not persistent button modes.
+// Guard the delayed reset so a result from an old YouTube SPA page cannot
+// mutate a newly injected Note control.
+function scheduleNoteButtonStateReset(noteButton, saveLifecycleEpoch) {
+  clearTimeout(ytdNoteButtonFeedbackTimer);
+  ytdNoteButtonFeedbackTimer = setTimeout(() => {
+    ytdNoteButtonFeedbackTimer = null;
+
+    if (
+      saveLifecycleEpoch !== hostPageLifecycleEpoch ||
+      noteButton !== ytdNoteButton ||
+      !noteButton.isConnected
+    ) {
+      return;
     }
+
+    setNoteButtonState(noteButton, "idle");
   }, 2000);
 }
 
@@ -638,63 +901,86 @@ async function saveCurrentNote() {
  * Shows a toast notification when a note is saved.
  */
 function showNoteSavedToast(note) {
+  ensureHostDesignSystemStyles();
   // Remove existing toast
-  const existing = document.getElementById("ytd-note-toast");
-  if (existing) existing.remove();
+  const existingToast = document.getElementById("ytd-note-toast");
+  if (existingToast) existingToast.remove();
+  clearTimeout(ytdNoteToastDismissTimer);
+  ytdNoteToastDismissTimer = null;
 
   const toast = document.createElement("div");
   toast.id = "ytd-note-toast";
+  toast.setAttribute("aria-live", "polite");
+  toast.setAttribute("aria-atomic", "true");
   toast.innerHTML = `
-    <div style="font-weight: 700; margin-bottom: 6px; color: #c8674f;">📝 Note saved</div>
-    <div style="font-size: 12px; color: #6b6258; margin-bottom: 8px;">${escapeHtmlForContent(note.timestamp)} — ${escapeHtmlForContent(note.videoTitle)}</div>
-    <div style="font-size: 13px; line-height: 1.55; color: #2e2a24;">"${escapeHtmlForContent(note.text)}"</div>
-    <div style="margin-top: 10px; font-size: 11px;">
-      <a href="${escapeHtmlForContent(note.timestampedUrl)}" style="color: #c8674f; font-weight: 600; text-decoration: none;">🔗 Copy link</a>
+    <div style="font: var(--sys-type-label); margin-bottom: var(--sys-layout-inline-gap); color: var(--sys-state-success-foreground);">📝 Note saved</div>
+    <div style="font: var(--sys-type-meta); color: var(--sys-text-secondary); margin-bottom: var(--sys-layout-inline-gap);">${escapeHtmlForContent(note.timestamp)} — ${escapeHtmlForContent(note.videoTitle)}</div>
+    <div style="font: var(--sys-type-body); color: var(--sys-text-primary);">"${escapeHtmlForContent(note.text)}"</div>
+    <div style="margin-top: var(--sys-layout-control-gap); font: var(--sys-type-meta);">
+      <a class="ytd-note-toast-copy" href="${escapeHtmlForContent(note.timestampedUrl)}" aria-label="Copy note link" style="color: var(--sys-action-primary-bg); font-weight: 600; text-decoration: none;">🔗 Copy link</a>
+      <span class="ytd-note-toast-copy-status" role="status" aria-live="polite" aria-atomic="true" style="display: block; margin-top: var(--sys-layout-inline-gap);"></span>
     </div>
   `;
 
   toast.style.cssText = `
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    bottom: var(--sys-layout-panel-inset);
+    right: var(--sys-layout-panel-inset);
     z-index: 999999;
-    background: #ffffff;
-    border: 1px solid #ece5d9;
-    border-radius: 14px;
-    padding: 16px 20px;
+    background: var(--comp-toast-bg);
+    border: 1px solid var(--comp-toast-border);
+    border-radius: var(--comp-toast-radius);
+    padding: var(--sys-layout-panel-inset);
+    box-sizing: border-box;
+    width: min(350px, calc(100vw - 24px));
     max-width: 350px;
-    box-shadow: 0 12px 32px rgba(50, 42, 32, 0.2);
-    font-family: system-ui, -apple-system, "Roboto", sans-serif;
-    animation: ytdSlideIn 0.3s ease;
+    box-shadow: var(--sys-elevation-overlay);
+    font-family: var(--sys-font-ui);
   `;
 
-  // Add animation keyframes
-  const style = document.createElement("style");
-  style.textContent = `
-    @keyframes ytdSlideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-  `;
-  document.head.appendChild(style);
+  const copyLink = toast.querySelector(".ytd-note-toast-copy");
+  const copyStatus = toast.querySelector(".ytd-note-toast-copy-status");
+  let isCopying = false;
 
-  // Copy link handler
-  toast.querySelector("a").addEventListener("click", async (e) => {
+  // Copy link feedback belongs to this existing success Toast and only settles
+  // when the real Clipboard request resolves or rejects.
+  copyLink.addEventListener("click", async (e) => {
     e.preventDefault();
+    if (isCopying) return;
+
+    isCopying = true;
+    copyLink.textContent = "Copying link…";
+    copyLink.setAttribute("aria-disabled", "true");
+    copyLink.style.pointerEvents = "none";
+    copyStatus.textContent = "Copying note link.";
+
     try {
       await navigator.clipboard.writeText(note.timestampedUrl);
-      e.target.textContent = "✓ Copied!";
+      copyLink.textContent = "✓ Link copied";
+      copyLink.setAttribute("aria-label", "Copy note link again");
+      copyStatus.textContent = "Note link copied.";
     } catch (err) {
+      copyLink.textContent = "! Copy failed — try again";
+      copyLink.setAttribute("aria-label", "Try copying note link again");
+      copyStatus.textContent =
+        "Could not copy the note link. Try again or copy the link address manually.";
       console.error("Copy failed:", err);
+    } finally {
+      isCopying = false;
+      copyLink.removeAttribute("aria-disabled");
+      copyLink.style.pointerEvents = "auto";
     }
   });
 
   document.body.appendChild(toast);
 
-  // Auto-dismiss after 5 seconds
-  setTimeout(() => {
-    toast.style.animation = "ytdSlideIn 0.3s ease reverse";
-    setTimeout(() => toast.remove(), 300);
+  // Keep the confirmation visible long enough to read, then remove it so it
+  // never blocks the YouTube controls or subsequent page content.
+  ytdNoteToastDismissTimer = setTimeout(() => {
+    ytdNoteToastDismissTimer = null;
+    if (toast.isConnected) {
+      toast.remove();
+    }
   }, 5000);
 }
 
@@ -805,6 +1091,8 @@ function escapeHtmlForContent(text) {
  * we clean up old markers and re-inject the button.
  */
 document.addEventListener("yt-navigate-finish", () => {
+  hostPageLifecycleEpoch += 1;
+
   // Clean up old key moment markers when navigating to a new video
   const existingMarkers = document.querySelectorAll(".ytd-key-moment-markers");
   existingMarkers.forEach((m) => m.remove());
@@ -819,21 +1107,27 @@ document.addEventListener("yt-navigate-finish", () => {
     digestButtonReconcileTimer = null;
   }
 
-  const existingNoteButton = document.getElementById("ytd-note-button");
-  if (existingNoteButton) existingNoteButton.remove();
+  document
+    .querySelectorAll("#ytd-note-button")
+    .forEach((button) => button.remove());
 
   // Reset note button state
   ytdNoteButton = null;
   clearTimeout(ytdNoteButtonTimer);
   ytdNoteButtonTimer = null;
+  clearTimeout(ytdNoteButtonFeedbackTimer);
+  ytdNoteButtonFeedbackTimer = null;
   if (ytdNoteButtonRetryTimer) {
     clearInterval(ytdNoteButtonRetryTimer);
     ytdNoteButtonRetryTimer = null;
   }
 
   // Remove any toasts
-  const existingToast = document.getElementById("ytd-note-toast");
-  if (existingToast) existingToast.remove();
+  document
+    .querySelectorAll("#ytd-note-toast")
+    .forEach((toast) => toast.remove());
+  clearTimeout(ytdNoteToastDismissTimer);
+  ytdNoteToastDismissTimer = null;
 
   // Re-inject buttons for the new video (with a small delay for YouTube to render)
   setTimeout(() => {

@@ -2,6 +2,28 @@ const YTD_OPTIONS = (() => {
   const LANGUAGE_STORAGE_KEY = "ytd_options_language";
   const PREVIEW_STORAGE_PREFIX = "youtubeDigestPreview:";
   const SUPPORTED_LANGUAGES = new Set(["en", "zh-CN"]);
+  const SETTINGS_STATUS = Object.freeze({
+    loadingSettings: { target: "configuration", state: "loading" },
+    migrationWarning: { target: "configuration", state: "warning" },
+    settingsLoadFailed: { target: "configuration", state: "error" },
+    addSupadataKey: { target: "supadata", state: "error" },
+    addDeepseekKey: { target: "deepseek", state: "error" },
+    saving: { target: "save", state: "loading" },
+    saved: { target: "save", state: "success" },
+    saveFailed: { target: "save", state: "error" },
+    copying: { target: "copy", state: "loading" },
+    promptCopied: { target: "copy", state: "success" },
+    copyFailed: { target: "copy", state: "error" },
+    clearingCache: { target: "cache", state: "loading" },
+    clearedDigests: { target: "cache", state: "success" },
+    clearCacheFailed: { target: "cache", state: "error" },
+    deletingNotes: { target: "notes", state: "loading" },
+    notesDeleted: { target: "notes", state: "success" },
+    deleteNotesFailed: { target: "notes", state: "error" },
+    resettingData: { target: "reset", state: "loading" },
+    allDataDeleted: { target: "reset", state: "success" },
+    resetFailed: { target: "reset", state: "error" },
+  });
 
   const COPY = {
     en: {
@@ -56,6 +78,7 @@ const YTD_OPTIONS = (() => {
         'Read <a href="PRIVACY.md" target="_blank">PRIVACY.md</a> in the repository for the complete data-flow description.',
       migrationWarning:
         "Custom provider settings were removed safely. Your Supadata key was kept, but the AI key was cleared. Enter a DeepSeek API key to continue.",
+      loadingSettings: "Loading saved settings…",
       saving: "Saving…",
       addSupadataKey: "Add a Supadata API key.",
       addDeepseekKey: "Add a DeepSeek API key.",
@@ -65,12 +88,18 @@ const YTD_OPTIONS = (() => {
       promptCopied: "Edited prompt copied.",
       copyFailed:
         "Could not copy the prompt. Select the prompt text and copy it manually.",
+      clearingCache: "Clearing cached digests…",
       clearedDigests: ({ count }) =>
         `Cleared ${count} cached digest${count === 1 ? "" : "s"}.`,
+      clearCacheFailed: "Could not clear cached digests. Please try again.",
+      deletingNotes: "Deleting all saved notes…",
       notesDeleted: "Deleted all saved notes.",
+      deleteNotesFailed: "Could not delete saved notes. Please try again.",
+      resettingData: "Resetting extension data…",
       resetConfirm:
         "Delete API keys, cached digests, translations, and saved notes from this Chrome profile?",
       allDataDeleted: "All YouTube Digest data was deleted.",
+      resetFailed: "Could not reset extension data. Please try again.",
       settingsLoadFailed:
         "Could not load saved settings. You can still preview this page.",
     },
@@ -124,6 +153,7 @@ const YTD_OPTIONS = (() => {
         '完整数据流说明请参阅仓库中的 <a href="PRIVACY.md" target="_blank">PRIVACY.md</a>。',
       migrationWarning:
         "已安全移除自定义服务设置。Supadata 密钥已保留，AI 密钥已清除。请输入 DeepSeek API 密钥以继续使用。",
+      loadingSettings: "正在加载已保存的设置…",
       saving: "正在保存…",
       addSupadataKey: "请添加 Supadata API 密钥。",
       addDeepseekKey: "请添加 DeepSeek API 密钥。",
@@ -132,11 +162,17 @@ const YTD_OPTIONS = (() => {
       copying: "正在复制…",
       promptCopied: "已复制编辑后的提示词。",
       copyFailed: "无法复制提示词。请选中提示词文本并手动复制。",
+      clearingCache: "正在清除缓存的摘要…",
       clearedDigests: ({ count }) => `已清除 ${count} 条缓存摘要。`,
+      clearCacheFailed: "无法清除缓存的摘要，请重试。",
+      deletingNotes: "正在删除全部已保存的笔记…",
       notesDeleted: "已删除全部已保存的笔记。",
+      deleteNotesFailed: "无法删除已保存的笔记，请重试。",
+      resettingData: "正在重置扩展数据…",
       resetConfirm:
         "要从当前 Chrome 个人资料中删除 API 密钥、缓存摘要、翻译和已保存的笔记吗？",
       allDataDeleted: "已删除全部 YouTube Digest 数据。",
+      resetFailed: "无法重置扩展数据，请重试。",
       settingsLoadFailed: "无法加载已保存的设置，但你仍可预览此页面。",
     },
   };
@@ -149,6 +185,19 @@ const YTD_OPTIONS = (() => {
     const normalizedLanguage = normalizeLanguage(language);
     const value = COPY[normalizedLanguage][key] ?? COPY.en[key] ?? "";
     return typeof value === "function" ? value(params) : value;
+  }
+
+  function getSettingsStatusDescriptor(key) {
+    return SETTINGS_STATUS[key] || null;
+  }
+
+  function setSavePending(button, isPending) {
+    setActionPending(button, isPending);
+  }
+
+  function setActionPending(button, isPending) {
+    button.disabled = isPending;
+    button.setAttribute("aria-busy", String(isPending));
   }
 
   function createStorageAdapter(chromeApi, fallbackStorage) {
@@ -266,6 +315,13 @@ const YTD_OPTIONS = (() => {
 
   function updateLanguageButtonState(buttons, language) {
     const normalizedLanguage = normalizeLanguage(language);
+    const selected = buttons.find(
+      (button) => button.dataset.language === normalizedLanguage,
+    );
+    const control = selected?.closest?.("[data-segmented-control]");
+    if (control && globalThis.YTD_SEGMENTED_CONTROL?.select(control, selected)) {
+      return;
+    }
     for (const button of buttons) {
       button.setAttribute(
         "aria-pressed",
@@ -342,6 +398,7 @@ const YTD_OPTIONS = (() => {
     const doc = root.document;
     const settingsApi = root.YTD_SETTINGS;
     if (!doc || !settingsApi) return;
+    root.YTD_SEGMENTED_CONTROL?.initialize(doc);
 
     const storage = createStorageAdapter(
       root.chrome,
@@ -355,23 +412,69 @@ const YTD_OPTIONS = (() => {
       "copyCustomizationPromptBtn",
     );
     const copyStatus = doc.getElementById("copyStatus");
+    const clearCacheBtn = doc.getElementById("clearCacheBtn");
+    const clearCacheStatus = doc.getElementById("clearCacheStatus");
+    const clearNotesBtn = doc.getElementById("clearNotesBtn");
+    const clearNotesStatus = doc.getElementById("clearNotesStatus");
+    const resetBtn = doc.getElementById("resetBtn");
+    const resetStatus = doc.getElementById("resetStatus");
     const saveStatus = doc.getElementById("saveStatus");
-    const dataStatus = doc.getElementById("dataStatus");
+    const saveSettingsBtn = doc.getElementById("saveSettingsBtn");
+    const configurationStatus = doc.getElementById("configurationStatus");
+    const supadataApiKeyStatus = doc.getElementById("supadataApiKeyStatus");
+    const aiApiKeyStatus = doc.getElementById("aiApiKeyStatus");
     const languageButtons = [...doc.querySelectorAll("[data-language]")];
     const statusStates = new Map();
     const promptDrafts = createPromptDrafts();
     let currentLanguage = "en";
+    let isSaving = false;
+    let isCopying = false;
+    let isClearingCache = false;
+    let isDeletingNotes = false;
+    let isResetting = false;
 
     function renderStatus(element) {
       const state = statusStates.get(element);
-      element.textContent = state
+      const statusText = element.querySelector(".status-message-text");
+      const text = state
         ? translate(currentLanguage, state.key, state.params)
         : "";
+
+      if (statusText) {
+        statusText.textContent = text;
+      } else {
+        element.textContent = text;
+      }
+      element.hidden = !state;
+      if (state?.state) {
+        element.dataset.state = state.state;
+      } else {
+        delete element.dataset.state;
+      }
     }
 
     function setStatus(element, key, params = {}) {
-      statusStates.set(element, { key, params });
+      if (!key) {
+        statusStates.delete(element);
+        renderStatus(element);
+        return;
+      }
+      statusStates.set(element, {
+        key,
+        params,
+        state: getSettingsStatusDescriptor(key)?.state,
+      });
       renderStatus(element);
+    }
+
+    function clearFieldStatus(input, status) {
+      input.removeAttribute("aria-invalid");
+      setStatus(status, null);
+    }
+
+    function setFieldError(input, status, key) {
+      input.setAttribute("aria-invalid", "true");
+      setStatus(status, key);
     }
 
     function applyLanguage(language) {
@@ -413,6 +516,7 @@ const YTD_OPTIONS = (() => {
     }
 
     async function loadSettings() {
+      setStatus(configurationStatus, "loadingSettings");
       try {
         const stored = await storage.get(settingsApi.STORAGE_KEY);
         const migration = settingsApi.migrateLegacyCustom(
@@ -424,10 +528,12 @@ const YTD_OPTIONS = (() => {
         supadataApiKeyInput.value = settings.supadataApiKey;
         if (migration.migrated) {
           await storage.set({ [settingsApi.STORAGE_KEY]: settings });
-          setStatus(saveStatus, "migrationWarning");
+          setStatus(configurationStatus, "migrationWarning");
+        } else {
+          setStatus(configurationStatus, null);
         }
       } catch (_error) {
-        setStatus(saveStatus, "settingsLoadFailed");
+        setStatus(configurationStatus, "settingsLoadFailed");
       }
     }
 
@@ -442,31 +548,48 @@ const YTD_OPTIONS = (() => {
 
     async function saveSettings(event) {
       event.preventDefault();
-      setStatus(saveStatus, "saving");
+      if (isSaving) return;
 
       const settings = settingsApi.normalize({
         aiApiKey: aiApiKeyInput.value,
         supadataApiKey: supadataApiKeyInput.value,
       });
 
+      clearFieldStatus(supadataApiKeyInput, supadataApiKeyStatus);
+      clearFieldStatus(aiApiKeyInput, aiApiKeyStatus);
+      setStatus(saveStatus, null);
       if (!settings.supadataApiKey) {
-        setStatus(saveStatus, "addSupadataKey");
+        setFieldError(
+          supadataApiKeyInput,
+          supadataApiKeyStatus,
+          "addSupadataKey",
+        );
         return;
       }
       if (!settings.aiApiKey) {
-        setStatus(saveStatus, "addDeepseekKey");
+        setFieldError(aiApiKeyInput, aiApiKeyStatus, "addDeepseekKey");
         return;
       }
 
+      isSaving = true;
+      setSavePending(saveSettingsBtn, true);
+      setStatus(saveStatus, "saving");
       try {
         await storage.set({ [settingsApi.STORAGE_KEY]: settings });
+        setStatus(configurationStatus, null);
         setStatus(saveStatus, "saved");
       } catch (_error) {
         setStatus(saveStatus, "saveFailed");
+      } finally {
+        isSaving = false;
+        setSavePending(saveSettingsBtn, false);
       }
     }
 
     async function copyCustomizationPrompt() {
+      if (isCopying) return;
+      isCopying = true;
+      setActionPending(copyCustomizationPromptBtn, true);
       setStatus(copyStatus, "copying");
       try {
         await copyPromptValue(
@@ -476,31 +599,69 @@ const YTD_OPTIONS = (() => {
         setStatus(copyStatus, "promptCopied");
       } catch (_error) {
         setStatus(copyStatus, "copyFailed");
+      } finally {
+        isCopying = false;
+        setActionPending(copyCustomizationPromptBtn, false);
       }
     }
 
     async function clearCachedDigests() {
-      const all = await storage.get(null);
-      const keys = Object.keys(all).filter((key) => key.startsWith("digest_"));
-      if (keys.length) await storage.remove(keys);
-      setStatus(dataStatus, "clearedDigests", { count: keys.length });
+      if (isClearingCache) return;
+      isClearingCache = true;
+      setActionPending(clearCacheBtn, true);
+      setStatus(clearCacheStatus, "clearingCache");
+      try {
+        const all = await storage.get(null);
+        const keys = Object.keys(all).filter((key) =>
+          key.startsWith("digest_"),
+        );
+        if (keys.length) await storage.remove(keys);
+        setStatus(clearCacheStatus, "clearedDigests", { count: keys.length });
+      } catch (_error) {
+        setStatus(clearCacheStatus, "clearCacheFailed");
+      } finally {
+        isClearingCache = false;
+        setActionPending(clearCacheBtn, false);
+      }
     }
 
     async function clearNotes() {
-      await storage.remove("ytd_notes");
-      setStatus(dataStatus, "notesDeleted");
+      if (isDeletingNotes) return;
+      isDeletingNotes = true;
+      setActionPending(clearNotesBtn, true);
+      setStatus(clearNotesStatus, "deletingNotes");
+      try {
+        await storage.remove("ytd_notes");
+        setStatus(clearNotesStatus, "notesDeleted");
+      } catch (_error) {
+        setStatus(clearNotesStatus, "deleteNotesFailed");
+      } finally {
+        isDeletingNotes = false;
+        setActionPending(clearNotesBtn, false);
+      }
     }
 
     async function resetAllData() {
+      if (isResetting) return;
       const confirmed = root.confirm(
         translate(currentLanguage, "resetConfirm"),
       );
       if (!confirmed) return;
 
-      await storage.clear();
-      await persistPreferredLanguage(storage, currentLanguage);
-      await loadSettings();
-      setStatus(dataStatus, "allDataDeleted");
+      isResetting = true;
+      setActionPending(resetBtn, true);
+      setStatus(resetStatus, "resettingData");
+      try {
+        await storage.clear();
+        await persistPreferredLanguage(storage, currentLanguage);
+        await loadSettings();
+        setStatus(resetStatus, "allDataDeleted");
+      } catch (_error) {
+        setStatus(resetStatus, "resetFailed");
+      } finally {
+        isResetting = false;
+        setActionPending(resetBtn, false);
+      }
     }
 
     form.addEventListener("submit", saveSettings);
@@ -508,16 +669,23 @@ const YTD_OPTIONS = (() => {
       "click",
       copyCustomizationPrompt,
     );
-    doc
-      .getElementById("clearCacheBtn")
-      .addEventListener("click", clearCachedDigests);
-    doc.getElementById("clearNotesBtn").addEventListener("click", clearNotes);
-    doc.getElementById("resetBtn").addEventListener("click", resetAllData);
+    clearCacheBtn.addEventListener("click", clearCachedDigests);
+    clearNotesBtn.addEventListener("click", clearNotes);
+    resetBtn.addEventListener("click", resetAllData);
     for (const button of languageButtons) {
       button.addEventListener("click", async () => {
         const language = button.dataset.language;
         applyLanguage(language);
         await persistPreferredLanguage(storage, language);
+      });
+    }
+    for (const [input, status] of [
+      [supadataApiKeyInput, supadataApiKeyStatus],
+      [aiApiKeyInput, aiApiKeyStatus],
+    ]) {
+      input.addEventListener("input", () => {
+        clearFieldStatus(input, status);
+        setStatus(saveStatus, null);
       });
     }
 
@@ -531,12 +699,16 @@ const YTD_OPTIONS = (() => {
   return {
     COPY,
     LANGUAGE_STORAGE_KEY,
+    SETTINGS_STATUS,
     copyPromptValue,
     createPromptDrafts,
     createStorageAdapter,
+    getSettingsStatusDescriptor,
     normalizeLanguage,
     persistPreferredLanguage,
     readPreferredLanguage,
+    setActionPending,
+    setSavePending,
     translate,
     updateLanguageButtonState,
     updateLocalizedPrompt,

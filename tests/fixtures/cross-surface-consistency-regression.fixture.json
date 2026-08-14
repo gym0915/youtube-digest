@@ -1,0 +1,30 @@
+{
+  "scenario": "DS-12-DS-15",
+  "surfaces": ["side-panel", "settings", "youtube-host"],
+  "settingsLanguages": ["en", "zh-CN"],
+  "transcriptModes": ["original", "zh", "bilingual"],
+  "longContent": {
+    "videoTitle": "A deliberately long English video title that proves the two-line visual clamp only applies to controlled video metadata, while learning content remains readable.",
+    "crossVideoTitle": "跨视频笔记的长标题只允许单行受控省略，不能挤压时间戳、动作或正文内容。",
+    "prompt": "Replace [PROVIDER] and [MODEL] in https://youtube-digest.example.test/remix/configuration/with-a-long-unbroken-technical-token.json before copying the editable local remix prompt.",
+    "error": "A detailed error explanation must wrap beside its Retry or Open Settings action instead of being truncated or converted into an inaccessible colour-only indicator."
+  },
+  "stateChannels": [
+    "brand-primary-action",
+    "success",
+    "error",
+    "warning",
+    "info",
+    "disabled",
+    "focus",
+    "playback",
+    "loading"
+  ],
+  "functionalContracts": [
+    "overview-lazy-load",
+    "row-level-translation-retry",
+    "settings-local-storage-and-reset-confirmation",
+    "digest-note-toast",
+    "n-shortcut-and-spa-cleanup"
+  ]
+}

@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>YouTube Digest Settings</title>
+    <link rel="stylesheet" href="segmented-control.css" />
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
@@ -12,23 +13,26 @@
         <div class="settings-heading-row">
           <div class="eyebrow">YouTube Digest</div>
           <div
-            class="language-switch"
+            class="segmented-control language-switch"
             role="group"
             aria-label="Interface language"
             data-i18n-aria-label="languageGroupLabel"
+            data-segmented-control
           >
             <button
-              class="language-option"
+              class="segmented-control__option language-option"
               type="button"
               data-language="en"
+              data-segmented-value="en"
               aria-pressed="true"
             >
               English
             </button>
             <button
-              class="language-option"
+              class="segmented-control__option language-option"
               type="button"
               data-language="zh-CN"
+              data-segmented-value="zh-CN"
               aria-pressed="false"
             >
               中文
@@ -44,37 +48,66 @@
       </header>
 
       <form id="settingsForm">
+        <div
+          id="configurationStatus"
+          class="configuration-status status-message"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          hidden
+        >
+          <span class="status-message-icon" aria-hidden="true"></span>
+          <span class="status-message-text"></span>
+        </div>
         <section class="card">
-          <h2 data-i18n="transcriptProvider">Transcript provider</h2>
-          <label for="supadataApiKey" data-i18n="supadataApiKeyLabel"
-            >Supadata API key</label
-          >
-          <input
-            id="supadataApiKey"
-            name="supadataApiKey"
-            type="password"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="Paste your Supadata key"
-          />
-          <p class="help">
-            <span data-i18n="supadataHelp"
-              >Used to fetch timestamped YouTube subtitles.</span
+          <h2 class="settings-section-heading" data-i18n="transcriptProvider">
+            Transcript provider
+          </h2>
+          <div class="settings-field">
+            <label for="supadataApiKey" data-i18n="supadataApiKeyLabel"
+              >Supadata API key</label
             >
-            <a
-              href="https://dash.supadata.ai/auth/sign-up"
-              target="_blank"
-              rel="noreferrer"
-              data-i18n="supadataLink"
-              >Create a Supadata account and key</a
-            ><span data-i18n="supadataHelpSuffix"
-              >. Supadata generates the key during onboarding.</span
+            <input
+              id="supadataApiKey"
+              name="supadataApiKey"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste your Supadata key"
+              aria-describedby="supadataApiKeyHelp supadataApiKeyStatus"
+            />
+            <p class="help" id="supadataApiKeyHelp">
+              <span data-i18n="supadataHelp"
+                >Used to fetch timestamped YouTube subtitles.</span
+              >
+              <a
+                href="https://dash.supadata.ai/auth/sign-up"
+                target="_blank"
+                rel="noreferrer"
+                data-i18n="supadataLink"
+                >Create a Supadata account and key</a
+              ><span data-i18n="supadataHelpSuffix"
+                >. Supadata generates the key during onboarding.</span
+              >
+            </p>
+            <p
+              id="supadataApiKeyStatus"
+              class="field-status status-message"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
             >
-          </p>
+              <span class="status-message-icon" aria-hidden="true"></span>
+              <span class="status-message-text"></span>
+            </p>
+          </div>
         </section>
 
         <section class="card">
-          <h2 data-i18n="aiProvider">AI provider</h2>
+          <h2 class="settings-section-heading" data-i18n="aiProvider">
+            AI provider
+          </h2>
           <div
             class="provider-summary"
             aria-label="Supported AI provider"
@@ -86,30 +119,44 @@
             >
           </div>
 
-          <label for="aiApiKey" data-i18n="deepseekApiKeyLabel"
-            >DeepSeek API key</label
-          >
-          <input
-            id="aiApiKey"
-            name="aiApiKey"
-            type="password"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="Paste your DeepSeek key"
-          />
-          <p class="help">
-            <span data-i18n="deepseekHelp"
-              >YouTube Digest uses DeepSeek V4 Flash for overviews,
-              explanations, translation, and note polishing.</span
+          <div class="settings-field">
+            <label for="aiApiKey" data-i18n="deepseekApiKeyLabel"
+              >DeepSeek API key</label
             >
-            <a
-              href="https://platform.deepseek.com/api_keys"
-              target="_blank"
-              rel="noreferrer"
-              data-i18n="deepseekLink"
-              >Create a DeepSeek API key</a
-            ><span data-i18n="deepseekHelpSuffix">.</span>
-          </p>
+            <input
+              id="aiApiKey"
+              name="aiApiKey"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste your DeepSeek key"
+              aria-describedby="aiApiKeyHelp aiApiKeyStatus"
+            />
+            <p class="help" id="aiApiKeyHelp">
+              <span data-i18n="deepseekHelp"
+                >YouTube Digest uses DeepSeek V4 Flash for overviews,
+                explanations, translation, and note polishing.</span
+              >
+              <a
+                href="https://platform.deepseek.com/api_keys"
+                target="_blank"
+                rel="noreferrer"
+                data-i18n="deepseekLink"
+                >Create a DeepSeek API key</a
+              ><span data-i18n="deepseekHelpSuffix">.</span>
+            </p>
+            <p
+              id="aiApiKeyStatus"
+              class="field-status status-message"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
+            >
+              <span class="status-message-icon" aria-hidden="true"></span>
+              <span class="status-message-text"></span>
+            </p>
+          </div>
           <div class="privacy-note" data-i18n="privacyNote">
             When you use AI features, DeepSeek receives the video transcript
             and relevant video context. Review DeepSeek's terms and pricing
@@ -118,10 +165,26 @@
         </section>
 
         <div class="form-actions">
-          <button class="primary" type="submit" data-i18n="saveSettings">
+          <button
+            id="saveSettingsBtn"
+            class="primary"
+            type="submit"
+            aria-describedby="saveStatus"
+            data-i18n="saveSettings"
+          >
             Save settings
           </button>
-          <span id="saveStatus" role="status" aria-live="polite"></span>
+          <span
+            id="saveStatus"
+            class="save-status status-message"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            hidden
+          >
+            <span class="status-message-icon" aria-hidden="true"></span>
+            <span class="status-message-text"></span>
+          </span>
         </div>
       </form>
 
@@ -181,11 +244,22 @@
             <button
               id="copyCustomizationPromptBtn"
               type="button"
+              aria-describedby="copyStatus"
               data-i18n="copyCustomizationPrompt"
             >
               Copy edited prompt
             </button>
-            <span id="copyStatus" role="status" aria-live="polite"></span>
+            <span
+              id="copyStatus"
+              class="status-message copy-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
+            >
+              <span class="status-message-icon" aria-hidden="true"></span>
+              <span class="status-message-text"></span>
+            </span>
           </div>
         </div>
       </details>
@@ -197,22 +271,71 @@
           profile. You can remove them at any time.
         </p>
         <div class="data-actions">
-          <button id="clearCacheBtn" type="button" data-i18n="clearCache">
-            Clear cached digests
-          </button>
-          <button id="clearNotesBtn" type="button" data-i18n="deleteNotes">
-            Delete all notes
-          </button>
-          <button
-            id="resetBtn"
-            class="danger"
-            type="button"
-            data-i18n="resetData"
-          >
-            Reset extension data
-          </button>
+          <div class="data-operation">
+            <button
+              id="clearCacheBtn"
+              type="button"
+              aria-describedby="clearCacheStatus"
+              data-i18n="clearCache"
+            >
+              Clear cached digests
+            </button>
+            <span
+              id="clearCacheStatus"
+              class="status-message data-operation-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
+            >
+              <span class="status-message-icon" aria-hidden="true"></span>
+              <span class="status-message-text"></span>
+            </span>
+          </div>
+          <div class="data-operation">
+            <button
+              id="clearNotesBtn"
+              type="button"
+              aria-describedby="clearNotesStatus"
+              data-i18n="deleteNotes"
+            >
+              Delete all notes
+            </button>
+            <span
+              id="clearNotesStatus"
+              class="status-message data-operation-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
+            >
+              <span class="status-message-icon" aria-hidden="true"></span>
+              <span class="status-message-text"></span>
+            </span>
+          </div>
+          <div class="data-operation">
+            <button
+              id="resetBtn"
+              class="danger"
+              type="button"
+              aria-describedby="resetStatus"
+              data-i18n="resetData"
+            >
+              Reset extension data
+            </button>
+            <span
+              id="resetStatus"
+              class="status-message data-operation-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
+            >
+              <span class="status-message-icon" aria-hidden="true"></span>
+              <span class="status-message-text"></span>
+            </span>
+          </div>
         </div>
-        <span id="dataStatus" role="status" aria-live="polite"></span>
       </section>
 
       <footer data-i18n-html="footer">
@@ -222,6 +345,7 @@
     </main>
 
     <script src="settings.js"></script>
+    <script src="segmented-control.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

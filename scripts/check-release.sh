@@ -28,6 +28,8 @@ public_allowlist=(
   "manifest.json"
   "background.js"
   "settings.js"
+  "segmented-control.css"
+  "segmented-control.js"
   "content.js"
   "sidepanel.html"
   "sidepanel.css"

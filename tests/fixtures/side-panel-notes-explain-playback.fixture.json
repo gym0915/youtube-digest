@@ -1,0 +1,38 @@
+{
+  "ticket": "04-side-panel-notes-explain-and-playback",
+  "quote": {
+    "copy": {
+      "success": "Quote copied.",
+      "failure": "Could not copy the quote. Select the quote text to copy it manually, or try again."
+    },
+    "save": {
+      "pending": "Saving this quote as a note…",
+      "success": "Quote saved to this video's notes.",
+      "failure": "Could not save this quote. Try again."
+    }
+  },
+  "notes": {
+    "thisVideoEmpty": "No notes for this video yet.",
+    "allNotesEmpty": "No notes saved yet.",
+    "delete": {
+      "pending": "Removing note…",
+      "failure": "Could not delete this note. Retry."
+    },
+    "play": {
+      "sameVideo": "Seek the current player to the note timestamp.",
+      "crossVideo": "Open the note's existing timestamped URL in a new tab."
+    }
+  },
+  "explain": {
+    "states": ["loading", "success", "error"],
+    "close": "Close removes only the visual modal; it does not cancel the request.",
+    "retry": "Retry explanation",
+    "staleResponse": "A closed modal or an outdated video cannot receive a late response."
+  },
+  "playback": {
+    "active": "Playback location uses a current row marker, time label, and play indicator.",
+    "manualScroll": "Manual scroll pauses following but does not remove the current playback marker.",
+    "recovered": "Follow playback restores scrolling without changing playback.",
+    "reducedMotion": "Follow scrolling uses auto when prefers-reduced-motion is reduce."
+  }
+}

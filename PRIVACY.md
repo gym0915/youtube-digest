@@ -1,6 +1,6 @@
 # Privacy
 
-Effective: July 28, 2026
+Effective: August 14, 2026
 
 YouTube Digest is a GitHub-only, bring-your-own-key Chrome extension. It has no YouTube Digest account, developer-operated backend, analytics, advertising, or telemetry.
 
@@ -85,4 +85,4 @@ Privacy-relevant changes will be documented in this file and in the repository h
 
 ## Questions
 
-This repository does not provide a public support or issue channel. Review this policy, the source code, and each provider's documentation before using the extension. For a vulnerability or accidental secret exposure, follow the private process in [SECURITY.md](SECURITY.md).
+For questions, review this policy, the source code, and each provider's documentation, or visit the [YouTube Digest repository](https://github.com/gym0915/youtube-digest/tree/main). For a vulnerability or accidental secret exposure, follow the private process in [SECURITY.md](SECURITY.md).

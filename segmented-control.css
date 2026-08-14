@@ -1,0 +1,66 @@
+/* Shared two-option segmented switch. The script measures the selected label
+   so the indicator can move precisely even when the two labels differ. */
+.segmented-control {
+  --segmented-control-padding: 4px;
+  --segmented-control-gap: 4px;
+  --segmented-control-bg: var(--comp-segmented-control-bg, #f2f2f2);
+  --segmented-control-fg: var(--sys-text-secondary, #606060);
+  --segmented-control-selected-bg: #0f0f0f;
+  --segmented-control-selected-fg: #ffffff;
+  --segmented-control-indicator-left: var(--segmented-control-padding);
+  --segmented-control-indicator-width: 0px;
+
+  position: relative;
+  display: inline-flex;
+  isolation: isolate;
+  gap: var(--segmented-control-gap);
+  padding: var(--segmented-control-padding);
+  border: 0;
+  border-radius: var(--sys-shape-pill, 9999px);
+  background: var(--segmented-control-bg);
+}
+
+.segmented-control::before {
+  position: absolute;
+  z-index: 0;
+  top: var(--segmented-control-padding);
+  bottom: var(--segmented-control-padding);
+  left: var(--segmented-control-indicator-left);
+  width: var(--segmented-control-indicator-width);
+  border-radius: inherit;
+  background: var(--segmented-control-selected-bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 16%);
+  content: "";
+  transition:
+    left 260ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.segmented-control__option {
+  position: relative;
+  z-index: 0;
+  flex: 1 1 auto;
+  min-width: var(--segmented-control-option-min-width, 0);
+  min-height: var(--segmented-control-option-height, 40px);
+  padding: 0 var(--segmented-control-option-padding, 20px);
+  border: 0;
+  border-radius: var(--sys-shape-pill, 9999px);
+  background: transparent;
+  color: var(--segmented-control-fg);
+  cursor: pointer;
+  font: var(--segmented-control-font, 600 15px/1.2 var(--sys-font-ui, sans-serif));
+  transition: color 160ms ease-out;
+}
+
+.segmented-control__option:hover { color: var(--sys-text-primary, #0f0f0f); }
+.segmented-control__option[aria-pressed="true"] { color: var(--segmented-control-selected-fg); }
+
+.segmented-control__option:focus-visible {
+  outline: var(--sys-state-focus-ring-width, 2px) solid var(--sys-state-focus-ring-color, #005fcc);
+  outline-offset: var(--sys-state-focus-ring-offset, 2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-control::before,
+  .segmented-control__option { transition-duration: 0ms; }
+}

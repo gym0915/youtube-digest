@@ -1,0 +1,79 @@
+{
+  "ticket": "05-settings-configuration-localization-and-status",
+  "scenario": "DS-08",
+  "viewports": ["1280x900", "600x900"],
+  "languages": ["en", "zh-CN"],
+  "fields": [
+    { "id": "supadataApiKey", "type": "password" },
+    { "id": "aiApiKey", "type": "password" }
+  ],
+  "longContent": {
+    "englishHelp": "A deliberately long provider explanation verifies that the supported-service summary, field help, privacy disclosure, and result messages wrap naturally without changing the stored API key or the complete visible label.",
+    "chinesePrivacy": "这是一段用于稳定夹具的长中文隐私说明，用来验证字段帮助、服务商摘要、隐私披露和状态消息会自然换行，而不会缩小中文字号、截断关键说明或改变密钥的本地存储边界。"
+  },
+  "statusCases": [
+    {
+      "key": "loadingSettings",
+      "target": "configuration",
+      "state": "loading",
+      "trigger": "The existing local settings read begins.",
+      "end": "The existing local read resolves or rejects."
+    },
+    {
+      "key": "migrationWarning",
+      "target": "configuration",
+      "state": "warning",
+      "trigger": "The existing legacy custom-provider migration writes its normalized result.",
+      "end": "A later successful settings write replaces the migration notice."
+    },
+    {
+      "key": "settingsLoadFailed",
+      "target": "configuration",
+      "state": "error",
+      "trigger": "The existing local settings read or migration write rejects.",
+      "end": "A later successful settings write replaces the read error."
+    },
+    {
+      "key": "addSupadataKey",
+      "target": "supadata",
+      "state": "error",
+      "trigger": "The existing submit validation finds the Supadata key missing.",
+      "end": "The user edits the field or submits a valid value."
+    },
+    {
+      "key": "addDeepseekKey",
+      "target": "deepseek",
+      "state": "error",
+      "trigger": "The existing submit validation finds the DeepSeek key missing.",
+      "end": "The user edits the field or submits a valid value."
+    },
+    {
+      "key": "saving",
+      "target": "save",
+      "state": "loading",
+      "trigger": "The existing normalized settings write begins after both existing validations pass.",
+      "end": "The existing local storage write resolves or rejects."
+    },
+    {
+      "key": "saved",
+      "target": "save",
+      "state": "success",
+      "trigger": "The existing local storage write resolves.",
+      "end": "The user edits a key, submits again, or the page lifecycle ends."
+    },
+    {
+      "key": "saveFailed",
+      "target": "save",
+      "state": "error",
+      "trigger": "The existing local storage write rejects.",
+      "end": "The user edits a key, submits again, or the page lifecycle ends."
+    }
+  ],
+  "invariants": [
+    "Only en and zh-CN are interface languages.",
+    "The language-specific Local remix prompt drafts remain in the current page session.",
+    "The settings storage key and both password fields remain unchanged.",
+    "Saving disables only the existing Save settings control while its existing storage write is pending.",
+    "No state depends on a fixed demonstration duration."
+  ]
+}

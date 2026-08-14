@@ -1,0 +1,45 @@
+{
+  "ticket": "06-settings-local-remix-and-data-operations",
+  "scenario": "DS-09",
+  "viewports": ["600x900"],
+  "languages": ["en", "zh-CN"],
+  "longPrompt": "Customize this local YouTube Digest workspace to use [PROVIDER] with [MODEL]. Preserve the complete https://example.test/a/very/long/path/without/ordinary-breakpoints?configuration=keep-current-draft and the technical filename youtube-digest.local-remix.configuration.example.json while keeping every current value available for manual editing and copying.",
+  "dataOperations": [
+    {
+      "key": "cache",
+      "storageEffect": "Read all current local keys, then remove only digest_ keys.",
+      "success": "Cleared 2 cached digests."
+    },
+    {
+      "key": "notes",
+      "storageEffect": "Remove only ytd_notes.",
+      "success": "Deleted all saved notes."
+    },
+    {
+      "key": "reset",
+      "storageEffect": "After native confirmation, clear local storage, restore the interface-language preference, then reload settings.",
+      "success": "All YouTube Digest data was deleted."
+    }
+  ],
+  "statusCases": [
+    { "key": "copying", "target": "copy", "state": "loading" },
+    { "key": "promptCopied", "target": "copy", "state": "success" },
+    { "key": "copyFailed", "target": "copy", "state": "error" },
+    { "key": "clearingCache", "target": "cache", "state": "loading" },
+    { "key": "clearedDigests", "target": "cache", "state": "success" },
+    { "key": "clearCacheFailed", "target": "cache", "state": "error" },
+    { "key": "deletingNotes", "target": "notes", "state": "loading" },
+    { "key": "notesDeleted", "target": "notes", "state": "success" },
+    { "key": "deleteNotesFailed", "target": "notes", "state": "error" },
+    { "key": "resettingData", "target": "reset", "state": "loading" },
+    { "key": "allDataDeleted", "target": "reset", "state": "success" },
+    { "key": "resetFailed", "target": "reset", "state": "error" }
+  ],
+  "invariants": [
+    "The native Local remix details disclosure remains closed by default.",
+    "The editable textarea keeps its complete current value while copying.",
+    "Each local action disables only itself while its real clipboard or storage work is pending.",
+    "Reset cancellation does not start a status or storage operation.",
+    "No result state depends on a fixed duration."
+  ]
+}

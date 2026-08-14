@@ -97,7 +97,7 @@ test("language controls expose a labelled group and one pressed button", () => {
   const html = read("options.html");
   assert.match(
     html,
-    /class="language-switch"[\s\S]*role="group"[\s\S]*aria-label="Interface language"/,
+    /class="segmented-control language-switch"[\s\S]*role="group"[\s\S]*aria-label="Interface language"[\s\S]*data-segmented-control/,
   );
   assert.match(
     html,

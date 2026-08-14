@@ -1,0 +1,23 @@
+{
+  "ticket": "03-side-panel-transcript-overview-and-translation",
+  "transcript": {
+    "cached": "Render readable source captions immediately; do not enter a network loading state.",
+    "requestStarted": "Fetching transcript begins only after the existing fetchTranscript message is sent.",
+    "missingKey": { "title": "API key missing", "action": "Open Settings" },
+    "requestFailed": { "title": "No transcript found", "action": "Try Again" }
+  },
+  "overview": {
+    "idle": "No request before the Overview tab is selected.",
+    "loading": "Creating your overview",
+    "success": { "chapters": 1, "keyQuotes": 1 },
+    "empty": { "chapters": 0, "keyQuotes": 0 },
+    "failed": { "message": "Provider unavailable", "action": "Retry overview" }
+  },
+  "translation": {
+    "modes": ["original", "zh", "bilingual"],
+    "pending": "Waiting for translation…",
+    "partial": { "complete": 1, "pending": 1, "failed": 1 },
+    "failed": { "message": "Translation unavailable.", "action": "Retry" },
+    "staleResponse": "A response with an outdated generation, video, or mode does not update a row."
+  }
+}

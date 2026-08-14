@@ -1,0 +1,27 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="surface" x1="64" y1="8" x2="64" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A4A4D"/>
+      <stop offset="0.1" stop-color="#303034"/>
+      <stop offset="0.5" stop-color="#18181B"/>
+      <stop offset="1" stop-color="#0C0C0E"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="18" y1="12" x2="110" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#747479"/>
+      <stop offset="0.42" stop-color="#3C3C40"/>
+      <stop offset="1" stop-color="#141416"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="128" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <filter id="playShadow" x="32" y="29" width="70" height="70" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="10" y="8" width="108" height="108" rx="24" fill="url(#edge)"/>
+    <rect x="12" y="10" width="104" height="104" rx="22" fill="url(#surface)"/>
+    <path d="M13 36C13 21.64 23.64 11 38 11H90C104.36 11 115 21.64 115 36V42C103 34 89 30 64 30C39 30 25 34 13 42V36Z" fill="#FFFFFF" fill-opacity="0.055"/>
+  </g>
+  <path d="M48 39.2C48 35.55 51.98 33.3 55.1 35.18L92.72 57.98C95.68 59.77 95.68 64.23 92.72 66.02L55.1 88.82C51.98 90.7 48 88.45 48 84.8V39.2Z" fill="#F7F7F8" filter="url(#playShadow)"/>
+</svg>

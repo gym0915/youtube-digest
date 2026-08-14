@@ -1,0 +1,15 @@
+{
+  "ticket": "07-youtube-host-actions-and-toast",
+  "scenario": "DS-10",
+  "viewports": ["1280x900", "1024x900"],
+  "hostActions": ["Digest", "Note", "Copy link"],
+  "noteStates": ["hidden", "visible", "saving", "saved", "error"],
+  "copyStates": ["copying", "copied", "error"],
+  "invariants": [
+    "Digest remains in the existing visible YouTube action bar and continues to open the side panel.",
+    "Note remains in the existing player layer; its mouse-idle visibility rule is separate from save state.",
+    "Saving, saved, error, and copy feedback settle only on their real message or Clipboard result, not a fixed duration.",
+    "A save error remains on Note; Toast is created only after a successful save.",
+    "Hidden Note has neither a pointer hit area nor an interactive Tab stop."
+  ]
+}

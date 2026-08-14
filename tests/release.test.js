@@ -17,7 +17,7 @@ test("manifest uses minimized install-time permissions", () => {
   assert.ok(!manifest.permissions.includes("activeTab"));
   assert.ok(manifest.host_permissions.includes("https://api.deepseek.com/*"));
   assert.equal(Object.hasOwn(manifest, "optional_host_permissions"), false);
-  assert.equal(manifest.version, "1.1.5");
+  assert.equal(manifest.version, "1.0.0");
 });
 
 test("release copy documents current scope without em dashes", () => {
@@ -186,6 +186,8 @@ test("release copy documents current scope without em dashes", () => {
 test("notes filters preserve selected contrast and expose pressed state", () => {
   const html = read("sidepanel.html");
   const css = read("sidepanel.css");
+  const segmentedControlCss = read("segmented-control.css");
+  const segmentedControlJs = read("segmented-control.js");
   const js = read("sidepanel.js");
 
   assert.match(
@@ -197,18 +199,20 @@ test("notes filters preserve selected contrast and expose pressed state", () => 
     /id="notesFilterAll"[\s\S]*?aria-pressed="false"[\s\S]*?>[\s\S]*?All Notes/,
   );
   assert.match(
-    css,
-    /\.notes-filter \.enhance-btn\.active:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--accent-hover\);[^}]*color:\s*white;/,
+    html,
+    /class="segmented-control notes-filter"[\s\S]*data-segmented-control/,
   );
   assert.match(
     css,
-    /\.notes-filter \.enhance-btn:hover:not\(:disabled\)\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--text-secondary\);/,
+    /\.notes-filter\s*\{[^}]*--segmented-control-option-height:\s*40px;/,
   );
-  assert.match(css, /\.notes-filter \.enhance-btn:focus-visible\s*\{[^}]*outline:/);
+  assert.match(segmentedControlCss, /--segmented-control-selected-bg:\s*#0f0f0f;/);
+  assert.match(segmentedControlCss, /cubic-bezier\(0\.22, 0\.61, 0\.36, 1\)/);
+  assert.match(segmentedControlCss, /\.segmented-control__option\[aria-pressed="true"\]\s*\{\s*color:\s*var\(--segmented-control-selected-fg\);/);
+  assert.match(segmentedControlJs, /function updateIndicator\(control\)/);
   assert.match(js, /setNotesFilter\(false\)/);
   assert.match(js, /setNotesFilter\(true\)/);
-  assert.match(js, /setAttribute\("aria-pressed", String\(!showAll\)\)/);
-  assert.match(js, /setAttribute\("aria-pressed", String\(showAll\)\)/);
+  assert.match(js, /YTD_SEGMENTED_CONTROL\?\.select\(control, selected\)/);
 });
 
 test("runtime has no source-file credential dependency or retired model", () => {

@@ -26,6 +26,10 @@ let currentChannelName = "";
 let currentVideoDescription = "";
 let currentVideoDuration = 0;
 let isAnalysisLoading = false; // Track if analysis is in progress
+let analysisGeneration = 0; // Invalidates Overview responses from an older video.
+let notesRequestGeneration = 0; // Ignores notes responses for an older filter/video.
+let explanationGeneration = 0; // Lets closing or changing video end only the visual presentation.
+let explainSelectionCleanup = null;
 let youtubeTabId = null; // Store the YouTube tab ID for reliable messaging
 let errorAction = null;
 
@@ -230,6 +234,7 @@ function groupTranscriptEntries(entries, limits = TRANSCRIPT_SEGMENT_LIMITS) {
 // ============================================================
 
 document.addEventListener("DOMContentLoaded", async () => {
+  window.YTD_SEGMENTED_CONTROL?.initialize(document);
   setupEventListeners();
   await evictOldCacheEntries(20);
 
@@ -354,6 +359,7 @@ function setupEventListeners() {
   // Tab switching
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+    tab.addEventListener("keydown", handleTabKeydown);
   });
 
   // Error retry
@@ -389,12 +395,15 @@ function setupEventListeners() {
     .getElementById("followPlaybackBtn")
     ?.addEventListener("click", () => {
       autoScrollEnabled = true;
-      document.getElementById("followPlaybackBtn").style.display = "none";
+      setFollowPlaybackState("following");
       // Jump straight back to the line currently being spoken. We scroll
       // directly (not via playbackTrackingTick) because the tick skips
       // entries that are already highlighted — and the current line almost
       // always IS highlighted, which made this button appear to do nothing.
-      if (!scrollToActiveEntry()) {
+      // Use an immediate jump for recovery. A long smooth scroll can outlive
+      // the scroll-event grace period below and be mistaken for another
+      // manual scroll, which would show this button again right after click.
+      if (!scrollToActiveEntry("auto")) {
         playbackTrackingTick(); // No highlight yet — let a tick establish one
       }
     });
@@ -410,12 +419,42 @@ function setupEventListeners() {
   });
 }
 
+/**
+ * ARIA tabs keep their existing click behavior while adding the standard
+ * arrow/Home/End keyboard path. Activating a tab still delegates to
+ * switchTab(), preserving its lazy Overview and playback contracts.
+ */
+function handleTabKeydown(event) {
+  const tabs = [...document.querySelectorAll(".tab")];
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex === -1) return;
+
+  let nextIndex = null;
+  if (event.key === "ArrowRight") {
+    nextIndex = (currentIndex + 1) % tabs.length;
+  } else if (event.key === "ArrowLeft") {
+    nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  } else if (event.key === "Home") {
+    nextIndex = 0;
+  } else if (event.key === "End") {
+    nextIndex = tabs.length - 1;
+  }
+
+  if (nextIndex === null) return;
+  event.preventDefault();
+  const nextTab = tabs[nextIndex];
+  switchTab(nextTab.dataset.tab);
+  nextTab.focus();
+}
+
 function setNotesFilter(showAll) {
   const thisVideoButton = document.getElementById("notesFilterThis");
   const allNotesButton = document.getElementById("notesFilterAll");
-  thisVideoButton?.classList.toggle("active", !showAll);
+  const control = thisVideoButton?.closest("[data-segmented-control]");
+  const selected = showAll ? allNotesButton : thisVideoButton;
+  if (control && window.YTD_SEGMENTED_CONTROL?.select(control, selected)) return;
+
   thisVideoButton?.setAttribute("aria-pressed", String(!showAll));
-  allNotesButton?.classList.toggle("active", showAll);
   allNotesButton?.setAttribute("aria-pressed", String(showAll));
 }
 
@@ -537,6 +576,9 @@ async function startDigest(videoId, videoUrl) {
   // Every video change invalidates observer work and in-flight translations.
   if (videoId !== currentVideoId) {
     translationGeneration += 1;
+    analysisGeneration += 1;
+    notesRequestGeneration += 1;
+    invalidateExplanationPresentation();
     if (transcriptScrollObserver) transcriptScrollObserver.disconnect();
     transcriptScrollObserver = null;
   }
@@ -615,10 +657,7 @@ async function startDigest(videoId, videoUrl) {
 
   if (!transcriptResult.success) {
     if (transcriptResult.error === "NO_SUPADATA_KEY") {
-      showError(
-        "API key missing",
-        "Add your Supadata API key in YouTube Digest Settings.",
-      );
+      showConfigError({ hasSupadataKey: false, hasAiKey: true });
       return;
     }
     showError(
@@ -661,13 +700,24 @@ async function startDigest(videoId, videoUrl) {
  * Shows chapters and key quotes only.
  */
 function renderAnalysisResults(analysis) {
+  const chapters = Array.isArray(analysis.chapters) ? analysis.chapters : [];
+  const keyQuotes = Array.isArray(analysis.keyQuotes) ? analysis.keyQuotes : [];
+  setOverviewLoadingIndicators(false);
+  renderOverviewStatus("success");
+
   // Chapters
   const chapterList = document.getElementById("chapterList");
   chapterList.innerHTML = "";
-  (analysis.chapters || []).forEach((chapter) => {
+  chapters.forEach((chapter) => {
     const li = document.createElement("li");
     li.className = "chapter-item";
     li.dataset.seconds = chapter.timestampSeconds;
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute(
+      "aria-label",
+      `Play from ${chapter.timestamp}: ${chapter.title}`,
+    );
     li.innerHTML = `
       <span class="chapter-timestamp">${escapeHtml(chapter.timestamp)}</span>
       <div class="chapter-content">
@@ -675,21 +725,32 @@ function renderAnalysisResults(analysis) {
         <span class="chapter-summary">${escapeHtml(chapter.summary || "")}</span>
       </div>
     `;
-    li.addEventListener("click", () => {
+    const seekToChapter = () => {
+      setSelectedOverviewChapter(li);
       debugLog(
         "[YouTube Digest Panel] Chapter clicked:",
         chapter.timestamp,
         chapter.timestampSeconds,
       );
       seekTo(chapter.timestampSeconds);
+    };
+    li.addEventListener("click", seekToChapter);
+    li.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      seekToChapter();
     });
     chapterList.appendChild(li);
   });
+  if (!chapters.length) {
+    chapterList.innerHTML =
+      '<li class="overview-empty" role="status"><span aria-hidden="true">○</span>No chapters were returned for this video.</li>';
+  }
 
   // Quotes - sort by timestamp (chronological order)
   const quotesList = document.getElementById("quotesList");
   quotesList.innerHTML = "";
-  const sortedQuotes = [...(analysis.keyQuotes || [])].sort(
+  const sortedQuotes = [...keyQuotes].sort(
     (a, b) => (a.timestampSeconds || 0) - (b.timestampSeconds || 0),
   );
   sortedQuotes.forEach((quote) => {
@@ -699,10 +760,27 @@ function renderAnalysisResults(analysis) {
     div.innerHTML = `
       <div class="quote-text">${escapeHtml(quote.quote)}</div>
       <div class="quote-meta">
-        <span class="quote-timestamp">${escapeHtml(quote.timestamp)}</span>
+        <button class="quote-timestamp" type="button" aria-label="Play from ${escapeHtml(quote.timestamp)}">${escapeHtml(quote.timestamp)}</button>
         <div class="quote-actions">
-          <button class="quote-save-note-btn" title="Save this quote as a note">📝 Note</button>
-          <button class="quote-copy-btn" title="Copy this quote">⧉ Copy</button>
+          <div class="quote-action">
+            <button class="quote-save-note-btn" type="button" title="Save this quote as a note">
+              <svg class="lucide lucide-bookmark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              Note
+            </button>
+            <span class="action-feedback quote-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+          </div>
+          <div class="quote-action">
+            <button class="quote-copy-btn" type="button" title="Copy this quote">
+              <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+              </svg>
+              Copy
+            </button>
+            <span class="action-feedback quote-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+          </div>
         </div>
       </div>
     `;
@@ -718,14 +796,31 @@ function renderAnalysisResults(analysis) {
     const quoteCopyBtn = div.querySelector(".quote-copy-btn");
     quoteCopyBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      if (quoteCopyBtn.disabled) return;
+      setLocalActionFeedback(quoteCopyBtn, {
+        state: "pending",
+        label: "Copying…",
+        message: "Copying this quote…",
+        ariaLabel: "Copying this quote",
+      });
       try {
         await navigator.clipboard.writeText(quote.quote);
-        quoteCopyBtn.textContent = "✓ Copied";
-        setTimeout(() => {
-          quoteCopyBtn.textContent = "⧉ Copy";
-        }, 1500);
+        if (!quoteCopyBtn.isConnected) return;
+        setLocalActionFeedback(quoteCopyBtn, {
+          state: "success",
+          label: "✓ Copied",
+          message: "Quote copied.",
+          ariaLabel: "Quote copied",
+        });
       } catch (err) {
         console.error("Copy failed:", err);
+        if (!quoteCopyBtn.isConnected) return;
+        setLocalActionFeedback(quoteCopyBtn, {
+          state: "error",
+          label: "Retry copy",
+          message: "Could not copy the quote. Select the quote text to copy it manually, or try again.",
+          ariaLabel: "Retry copying this quote",
+        });
       }
     });
 
@@ -737,50 +832,134 @@ function renderAnalysisResults(analysis) {
 
     quotesList.appendChild(div);
   });
+  if (!sortedQuotes.length) {
+    quotesList.innerHTML =
+      '<div class="overview-empty" role="status"><span aria-hidden="true">○</span>No key quotes were returned for this video.</div>';
+  }
+}
+
+/**
+ * Keeps the selected Overview chapter explicit after a timestamp jump. This
+ * is independent from transcript playback-following, which intentionally
+ * remains scoped to the Transcript tab.
+ */
+function setSelectedOverviewChapter(selectedChapter) {
+  document.querySelectorAll(".chapter-item.is-selected").forEach((chapter) => {
+    chapter.classList.remove("is-selected");
+    chapter.removeAttribute("aria-current");
+    const timestamp = chapter.querySelector(".chapter-timestamp")?.textContent;
+    const title = chapter.querySelector(".chapter-title")?.textContent;
+    chapter.setAttribute("aria-label", `Play from ${timestamp}: ${title}`);
+  });
+
+  selectedChapter.classList.add("is-selected");
+  selectedChapter.setAttribute("aria-current", "true");
+  const timestamp = selectedChapter.querySelector(".chapter-timestamp")?.textContent;
+  const title = selectedChapter.querySelector(".chapter-title")?.textContent;
+  selectedChapter.setAttribute(
+    "aria-label",
+    `Currently selected at ${timestamp}: ${title}`,
+  );
+}
+
+/**
+ * Keeps local action feedback in its initiating card. Results persist until a
+ * subsequent action, a render, or the card lifecycle replaces them; no timer
+ * is used to claim that a copy or save state has changed.
+ */
+function setLocalActionFeedback(
+  button,
+  { state, label, message, ariaLabel, manualCopyText = "" },
+) {
+  button.dataset.feedbackState = state;
+  button.disabled = state === "pending";
+  button.setAttribute("aria-busy", String(state === "pending"));
+  button.setAttribute("aria-label", ariaLabel || label);
+  const labelElement = button.querySelector(".note-action-label");
+  if (labelElement) {
+    labelElement.textContent = label;
+  } else {
+    button.textContent = label;
+  }
+
+  const feedback = button
+    .closest(".quote-action, .note-action")
+    ?.querySelector(".action-feedback");
+  if (!feedback) return;
+
+  feedback.replaceChildren();
+  feedback.hidden = !message;
+  feedback.dataset.feedbackState = state;
+  if (!message) return;
+
+  feedback.append(document.createTextNode(message));
+  if (manualCopyText) {
+    const manualCopy = document.createElement("span");
+    manualCopy.className = "manual-copy-value";
+    manualCopy.textContent = manualCopyText;
+    feedback.append(manualCopy);
+  }
 }
 
 /**
  * Saves a key quote as a timestamped note.
  */
 async function saveQuoteAsNote(quote, btn) {
-  if (!currentVideoId) return;
+  if (!currentVideoId || btn.disabled) return;
 
-  const originalText = btn.textContent;
-  btn.textContent = "Saving...";
-  btn.disabled = true;
+  const requestVideoId = currentVideoId;
+  const requestVideoTitle = currentVideoTitle;
+  const requestChannelName = currentChannelName;
+  setLocalActionFeedback(btn, {
+    state: "pending",
+    label: "Saving…",
+    message: "Saving this quote as a note…",
+    ariaLabel: "Saving this quote as a note",
+  });
 
   try {
     const result = await chrome.runtime.sendMessage({
       action: "saveNote",
-      videoId: currentVideoId,
+      videoId: requestVideoId,
       timestamp: quote.timestampSeconds,
-      videoTitle: currentVideoTitle,
-      channelName: currentChannelName,
+      videoTitle: requestVideoTitle,
+      channelName: requestChannelName,
     });
 
-    if (result.success) {
-      btn.textContent = "✓ Saved";
-      setTimeout(() => {
-        btn.textContent = originalText;
-        btn.disabled = false;
-      }, 1500);
+    if (requestVideoId !== currentVideoId || !btn.isConnected) return;
+
+    if (result?.success) {
+      setLocalActionFeedback(btn, {
+        state: "success",
+        label: "✓ Saved",
+        message: "Quote saved to this video's notes.",
+        ariaLabel: "Quote saved to notes",
+      });
       // Refresh notes list if on Notes tab
-      loadNotes(currentVideoId);
+      loadNotes(requestVideoId);
     } else {
-      console.error("[YouTube Digest] Save quote as note failed:", result.error);
-      btn.textContent = "Error";
-      setTimeout(() => {
-        btn.textContent = originalText;
-        btn.disabled = false;
-      }, 1500);
+      console.error(
+        "[YouTube Digest] Save quote as note failed:",
+        result?.error,
+      );
+      setLocalActionFeedback(btn, {
+        state: "error",
+        label: "Retry save",
+        message: result?.error
+          ? `Could not save this quote: ${result.error}`
+          : "Could not save this quote. Try again.",
+        ariaLabel: "Retry saving this quote as a note",
+      });
     }
   } catch (error) {
     console.error("[YouTube Digest] Save quote as note error:", error);
-    btn.textContent = "Error";
-    setTimeout(() => {
-      btn.textContent = originalText;
-      btn.disabled = false;
-    }, 1500);
+    if (requestVideoId !== currentVideoId || !btn.isConnected) return;
+    setLocalActionFeedback(btn, {
+      state: "error",
+      label: "Retry save",
+      message: `Could not save this quote: ${error.message || "Unknown error"}`,
+      ariaLabel: "Retry saving this quote as a note",
+    });
   }
 }
 
@@ -855,7 +1034,7 @@ function renderTranscript() {
     const timestamp = `${minutes}:${String(seconds).padStart(2, "0")}`;
 
     div.innerHTML = `
-      <span class="transcript-time">${timestamp}</span>
+      <button class="transcript-time" type="button" aria-label="Play from ${timestamp}">${timestamp}</button>
       <span class="transcript-text">${renderSubtitleInlineMarkup(group.text)}</span>
     `;
 
@@ -958,11 +1137,16 @@ function showConfigError(configStatus) {
 
 function switchTab(tabName) {
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.tab === tabName);
+    const active = tab.dataset.tab === tabName;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
   });
 
   document.querySelectorAll(".tab-panel").forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.panel === tabName);
+    const active = panel.dataset.panel === tabName;
+    panel.classList.toggle("active", active);
+    panel.setAttribute("aria-hidden", String(!active));
   });
 
   // Start/stop playback tracking based on which tab is active
@@ -978,6 +1162,66 @@ function switchTab(tabName) {
   }
 }
 
+function renderOverviewStatus(state, message = "") {
+  const panel = document.getElementById("panelOverview");
+  const status = document.getElementById("overviewStatus");
+  if (!panel || !status) return;
+
+  panel.dataset.overviewState = state;
+  status.className = `overview-status overview-status--${state}`;
+  status.replaceChildren();
+
+  // Loading feedback belongs with the two result regions. Keeping this status
+  // node out of the visual flow prevents a page-level banner from pushing the
+  // Chapters and Key Quotes headings away from their placeholders.
+  if (state === "success" || state === "loading") {
+    status.hidden = true;
+    return;
+  }
+
+  status.hidden = false;
+  const icon = document.createElement("span");
+  icon.className = "overview-status-icon";
+  icon.setAttribute("aria-hidden", "true");
+  const content = document.createElement("div");
+  const heading = document.createElement("strong");
+  const copy = document.createElement("p");
+  content.append(heading, copy);
+  status.append(icon, content);
+
+  if (state === "error") {
+    icon.textContent = "!";
+    heading.textContent = "Overview could not be created";
+    copy.textContent = message || "Try again to request chapters and key quotes.";
+    const retry = document.createElement("button");
+    retry.className = "overview-retry-btn";
+    retry.type = "button";
+    retry.textContent = "Retry overview";
+    retry.addEventListener("click", triggerAnalysis);
+    content.append(retry);
+    return;
+  }
+
+  icon.textContent = "○";
+  heading.textContent = "Overview is ready when you open this tab.";
+  copy.textContent = "Chapters and key quotes load only after you select Overview.";
+}
+
+function setOverviewLoadingIndicators(isLoading) {
+  const chapterList = document.getElementById("chapterList");
+  const quotesList = document.getElementById("quotesList");
+  const chapterIndicator = document.getElementById("chaptersLoadingIndicator");
+  const quotesIndicator = document.getElementById("quotesLoadingIndicator");
+
+  if (chapterIndicator) chapterIndicator.hidden = !isLoading;
+  if (quotesIndicator) quotesIndicator.hidden = !isLoading;
+  [chapterList, quotesList].forEach((region) => {
+    if (!region) return;
+    region.toggleAttribute("aria-busy", isLoading);
+    if (isLoading) region.replaceChildren();
+  });
+}
+
 /**
  * Triggers the LLM analysis (lazy-loaded when user clicks Overview or Quotes tab).
  * This saves tokens by not running analysis until needed.
@@ -987,17 +1231,11 @@ async function triggerAnalysis() {
     return;
 
   isAnalysisLoading = true;
+  const requestGeneration = analysisGeneration;
 
-  // Show loading indicators in the Overview tab
-  const chapterList = document.getElementById("chapterList");
-  const quotesList = document.getElementById("quotesList");
-
-  if (chapterList)
-    chapterList.innerHTML =
-      '<li class="chapter-item" style="color: var(--text-muted); border: none;">Loading chapters...</li>';
-  if (quotesList)
-    quotesList.innerHTML =
-      '<div class="quote-item" style="color: var(--text-muted); border-left-color: var(--border);">Loading quotes...</div>';
+  // The visual state starts only after the existing lazy request starts.
+  renderOverviewStatus("loading");
+  setOverviewLoadingIndicators(true);
 
   try {
     const analysisResult = await chrome.runtime.sendMessage({
@@ -1009,10 +1247,11 @@ async function triggerAnalysis() {
       videoDuration: currentVideoDuration,
     });
 
+    if (requestGeneration !== analysisGeneration) return;
+
     if (!analysisResult.success) {
-      if (chapterList)
-        chapterList.innerHTML = `<li class="chapter-item" style="color: var(--accent); border: none;">Analysis failed: ${escapeHtml(analysisResult.error || "Unknown error")}</li>`;
-      isAnalysisLoading = false;
+      setOverviewLoadingIndicators(false);
+      renderOverviewStatus("error", analysisResult.error || "Unknown error");
       return;
     }
 
@@ -1023,12 +1262,13 @@ async function triggerAnalysis() {
     // Save to cache now that we have analysis
     await saveToCache(currentVideoId);
   } catch (error) {
+    if (requestGeneration !== analysisGeneration) return;
     console.error("[YouTube Digest Panel] Analysis error:", error);
-    if (chapterList)
-      chapterList.innerHTML = `<li class="chapter-item" style="color: var(--accent); border: none;">Error: ${escapeHtml(error.message)}</li>`;
+    setOverviewLoadingIndicators(false);
+    renderOverviewStatus("error", error.message || "Unknown error");
+  } finally {
+    if (requestGeneration === analysisGeneration) isAnalysisLoading = false;
   }
-
-  isAnalysisLoading = false;
 }
 
 // ============================================================
@@ -1142,15 +1382,27 @@ async function copyToClipboard(text) {
 
 async function copyToClipboardWithFeedback(text, buttonId) {
   const btn = document.getElementById(buttonId);
-  const original = btn.textContent;
+  if (!btn || btn.disabled) return;
+
+  btn.dataset.feedbackState = "pending";
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  btn.setAttribute("aria-label", "Copying transcript");
+  btn.title = "Copying transcript";
 
   const success = await copyToClipboard(text);
+  btn.disabled = false;
+  btn.setAttribute("aria-busy", "false");
   if (success) {
-    btn.textContent = "✓ Copied";
-    setTimeout(() => {
-      btn.textContent = original;
-    }, 2000);
+    btn.dataset.feedbackState = "success";
+    btn.setAttribute("aria-label", "Transcript copied");
+    btn.title = "Transcript copied";
+    return;
   }
+
+  btn.dataset.feedbackState = "error";
+  btn.setAttribute("aria-label", "Retry copying transcript");
+  btn.title = "Retry copying transcript";
 }
 
 function downloadTextFile(text, filename) {
@@ -1183,15 +1435,15 @@ function setupExplainFeature() {
   const transcriptList = document.getElementById("transcriptList");
   if (!transcriptList) return;
 
-  // Remove existing tooltip if any
-  const existingTooltip = document.getElementById("explainTooltip");
-  if (existingTooltip) existingTooltip.remove();
+  // Each transcript owns one selection listener. Replacing an older listener
+  // prevents stale transcript DOM from offering a second Explain entry.
+  explainSelectionCleanup?.();
 
   // Create the explain tooltip/button
   const tooltip = document.createElement("div");
   tooltip.id = "explainTooltip";
   tooltip.className = "explain-tooltip";
-  tooltip.innerHTML = `<button class="explain-btn">💡 Explain</button>`;
+  tooltip.innerHTML = `<button class="explain-btn" type="button">💡 Explain</button>`;
   tooltip.style.display = "none";
   document.body.appendChild(tooltip);
 
@@ -1211,12 +1463,17 @@ function setupExplainFeature() {
   });
 
   // Listen for text selection
-  document.addEventListener("mouseup", (e) => {
+  const handleSelectionMouseUp = () => {
     const selection = window.getSelection();
+    if (!selection) {
+      tooltip.style.display = "none";
+      return;
+    }
     const text = selection.toString().trim();
 
     // Only show if selecting within transcript
-    const isInTranscript = transcriptList.contains(selection.anchorNode);
+    const isInTranscript =
+      selection.rangeCount > 0 && transcriptList.contains(selection.anchorNode);
 
     // Allow any selection length (removed 10+ char requirement)
     if (text.length > 0 && isInTranscript) {
@@ -1232,14 +1489,24 @@ function setupExplainFeature() {
     } else {
       tooltip.style.display = "none";
     }
-  });
+  };
 
   // Hide tooltip when clicking elsewhere
-  document.addEventListener("mousedown", (e) => {
+  const hideTooltipOnOutsidePointer = (e) => {
     if (!tooltip.contains(e.target)) {
       tooltip.style.display = "none";
     }
-  });
+  };
+  document.addEventListener("mouseup", handleSelectionMouseUp);
+  document.addEventListener("mousedown", hideTooltipOnOutsidePointer);
+
+  const cleanup = () => {
+    document.removeEventListener("mouseup", handleSelectionMouseUp);
+    document.removeEventListener("mousedown", hideTooltipOnOutsidePointer);
+    tooltip.remove();
+    if (explainSelectionCleanup === cleanup) explainSelectionCleanup = null;
+  };
+  explainSelectionCleanup = cleanup;
 
   // Handle explain button click
   tooltip
@@ -1255,60 +1522,162 @@ function setupExplainFeature() {
 }
 
 /**
+ * Ends only the visual Explain presentation. The background request continues
+ * unchanged, but a response can no longer write into a closed or old modal.
+ */
+function invalidateExplanationPresentation() {
+  explanationGeneration += 1;
+  document.getElementById("explainModal")?.remove();
+  explainSelectionCleanup?.();
+}
+
+function closeExplanationPresentation(modal) {
+  explanationGeneration += 1;
+  if (modal?.isConnected) modal.remove();
+}
+
+/**
  * Shows the explanation modal and fetches it from the configured AI provider.
  */
 async function showExplanation(selectedText) {
+  // A new selection replaces only the old visual surface. It does not cancel
+  // the existing explainSelection message or change its request contract.
+  document.getElementById("explainModal")?.remove();
+
   // Create modal
   const modal = document.createElement("div");
   modal.id = "explainModal";
   modal.className = "explain-modal-overlay";
   modal.innerHTML = `
-    <div class="explain-modal">
+    <div class="explain-modal" role="dialog" aria-modal="true" aria-labelledby="explainModalTitle" aria-describedby="explanationContent">
       <div class="explain-modal-header">
-        <div class="explain-modal-title">Explain</div>
-        <button class="explain-modal-close" id="closeExplain">✕</button>
+        <div class="explain-modal-title" id="explainModalTitle">Explain</div>
+        <button class="explain-modal-close" id="closeExplain" type="button" aria-label="Close explanation" title="Close explanation">✕</button>
       </div>
       <div class="explain-selected-text">"${escapeHtml(selectedText.substring(0, 200))}${selectedText.length > 200 ? "..." : ""}"</div>
-      <div class="explain-modal-content" id="explanationContent">
-        <div class="explain-loading">
-          <div class="loading-bar"></div>
-          <span>Analyzing...</span>
-        </div>
-      </div>
+      <div class="explain-modal-content" id="explanationContent"></div>
     </div>
   `;
 
   document.body.appendChild(modal);
+  modal.querySelector(".explain-modal-close")?.focus();
 
-  // Close handlers
-  document
-    .getElementById("closeExplain")
-    .addEventListener("click", () => modal.remove());
+  // Closing changes only this visual presentation, never the request itself.
+  modal
+    .querySelector(".explain-modal-close")
+    .addEventListener("click", () => closeExplanationPresentation(modal));
   modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.remove();
+    if (e.target === modal) closeExplanationPresentation(modal);
   });
 
   // Get some context around the selection from the transcript
-  const transcriptContext = getTranscriptContext(selectedText);
+  return requestExplanation(modal, {
+    selectedText,
+    transcriptContext: getTranscriptContext(selectedText),
+    videoTitle: currentVideoTitle,
+    videoId: currentVideoId,
+  });
+}
 
-  // Fetch explanation
+function explanationPresentationIsCurrent(modal, requestGeneration, videoId) {
+  return (
+    modal?.isConnected &&
+    requestGeneration === explanationGeneration &&
+    videoId === currentVideoId
+  );
+}
+
+function renderExplanationState(modal, state, { explanation = "", error = "", retry } = {}) {
+  const contentDiv = modal?.querySelector("#explanationContent");
+  if (!contentDiv) return;
+
+  modal.dataset.explanationState = state;
+  contentDiv.replaceChildren();
+
+  if (state === "loading") {
+    const loading = document.createElement("div");
+    loading.className = "explain-loading";
+    loading.setAttribute("role", "status");
+    loading.setAttribute("aria-live", "polite");
+    loading.setAttribute("aria-atomic", "true");
+    const indicator = document.createElement("span");
+    indicator.className = "explain-loading-indicator";
+    indicator.setAttribute("aria-hidden", "true");
+    indicator.textContent = "…";
+    const copy = document.createElement("span");
+    copy.textContent = "Analyzing selected text…";
+    loading.append(indicator, copy);
+    contentDiv.append(loading);
+    return;
+  }
+
+  if (state === "success") {
+    const explanationText = document.createElement("div");
+    explanationText.className = "explain-text";
+    String(explanation || "")
+      .split(/\n{2,}/)
+      .forEach((paragraphText) => {
+        const paragraph = document.createElement("p");
+        const lines = paragraphText.split("\n");
+        lines.forEach((line, index) => {
+          if (index > 0) paragraph.append(document.createElement("br"));
+          paragraph.append(document.createTextNode(line));
+        });
+        explanationText.append(paragraph);
+      });
+    contentDiv.append(explanationText);
+    return;
+  }
+
+  const failure = document.createElement("div");
+  failure.className = "explain-error";
+  failure.setAttribute("role", "alert");
+  const title = document.createElement("strong");
+  title.textContent = "Explanation unavailable";
+  const message = document.createElement("p");
+  message.textContent = error || "Try again to explain the selected text.";
+  const retryButton = document.createElement("button");
+  retryButton.className = "explain-retry-btn";
+  retryButton.type = "button";
+  retryButton.textContent = "Retry explanation";
+  retryButton.addEventListener("click", retry);
+  failure.append(title, message, retryButton);
+  contentDiv.append(failure);
+}
+
+async function requestExplanation(modal, request) {
+  const requestGeneration = ++explanationGeneration;
+  renderExplanationState(modal, "loading");
+
   try {
     const result = await chrome.runtime.sendMessage({
       action: "explainSelection",
-      selectedText: selectedText,
-      transcriptContext: transcriptContext,
-      videoTitle: currentVideoTitle,
+      selectedText: request.selectedText,
+      transcriptContext: request.transcriptContext,
+      videoTitle: request.videoTitle,
     });
 
-    const contentDiv = document.getElementById("explanationContent");
-    if (result.success) {
-      contentDiv.innerHTML = `<div class="explain-text">${escapeHtml(result.explanation).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</div>`;
-    } else {
-      contentDiv.innerHTML = `<div class="explain-error">Failed to get explanation: ${escapeHtml(result.error)}</div>`;
+    if (!explanationPresentationIsCurrent(modal, requestGeneration, request.videoId))
+      return;
+
+    if (result?.success) {
+      renderExplanationState(modal, "success", {
+        explanation: result.explanation,
+      });
+      return;
     }
+
+    renderExplanationState(modal, "error", {
+      error: result?.error || "Failed to get an explanation.",
+      retry: () => requestExplanation(modal, request),
+    });
   } catch (error) {
-    const contentDiv = document.getElementById("explanationContent");
-    contentDiv.innerHTML = `<div class="explain-error">Error: ${escapeHtml(error.message)}</div>`;
+    if (!explanationPresentationIsCurrent(modal, requestGeneration, request.videoId))
+      return;
+    renderExplanationState(modal, "error", {
+      error: error.message || "Failed to get an explanation.",
+      retry: () => requestExplanation(modal, request),
+    });
   }
 }
 
@@ -1463,16 +1832,23 @@ async function updateCache() {
  * @param {string|null} videoId - Filter by video ID, or null for all notes
  */
 async function loadNotes(videoId) {
+  const requestGeneration = ++notesRequestGeneration;
   try {
     const result = await chrome.runtime.sendMessage({
       action: "getNotes",
       videoId: videoId,
     });
 
-    if (result.success) {
+    // A filter switch or video change may have started a newer request while
+    // this storage response was pending. Keep its data from replacing the
+    // current Notes surface without altering the existing getNotes request.
+    if (requestGeneration !== notesRequestGeneration) return;
+
+    if (result?.success) {
       renderNotes(result.notes, videoId);
     }
   } catch (error) {
+    if (requestGeneration !== notesRequestGeneration) return;
     console.error("[YouTube Digest Panel] Load notes error:", error);
   }
 }
@@ -1490,9 +1866,21 @@ function renderNotes(notes, filteredVideoId) {
 
   if (!notes || notes.length === 0) {
     notesIntro.style.display = "block";
-    notesIntro.textContent = filteredVideoId
-      ? "No notes for this video yet. Hover over the video and click 📝 Note to save."
-      : "No notes saved yet. Hover over a video and click 📝 Note to save.";
+    const emptyMessage = filteredVideoId
+      ? "No notes for this video yet. Hover over the video and click"
+      : "No notes saved yet. Hover over a video and click";
+    notesIntro.innerHTML = `${emptyMessage}
+      <svg class="lucide lucide-notebook-pen notes-intro-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M2 6h4" />
+        <path d="M2 10h4" />
+        <path d="M2 14h4" />
+        <path d="M2 18h4" />
+        <rect width="16" height="20" x="4" y="2" rx="2" />
+        <path d="M15.5 7.5 18 10" />
+        <path d="M14 14.5 12 17l2.5-2" />
+        <path d="m18.5 7.5-4.1 4.1a2.12 2.12 0 0 0-.5.8l-.7 2.2 2.2-.7a2.12 2.12 0 0 0 .8-.5l4.1-4.1a1.5 1.5 0 0 0-2.1-2.1Z" />
+      </svg>
+      Note to save.`;
     return;
   }
 
@@ -1503,16 +1891,42 @@ function renderNotes(notes, filteredVideoId) {
     noteEl.className = "note-item";
     noteEl.innerHTML = `
       <div class="note-header">
-        <span class="note-timestamp" data-url="${escapeHtml(note.timestampedUrl)}" data-seconds="${Number(note.timestampSeconds) || 0}">${escapeHtml(note.timestamp)}</span>
+        <button class="note-timestamp" type="button" aria-label="Open note at ${escapeHtml(note.timestamp)}" data-url="${escapeHtml(note.timestampedUrl)}" data-seconds="${Number(note.timestampSeconds) || 0}">${escapeHtml(note.timestamp)}</button>
         ${!filteredVideoId ? `<span class="note-video-title">${escapeHtml(note.videoTitle)}</span>` : ""}
-        <button class="note-delete" data-id="${escapeHtml(note.id)}" title="Delete note">✕</button>
+        <button class="note-delete" type="button" data-id="${escapeHtml(note.id)}" title="Delete note" aria-label="Delete note">✕</button>
       </div>
       <div class="note-text">"${escapeHtml(note.text)}"</div>
       <div class="note-actions">
-        <button class="note-action-btn note-copy-text">⧉ Copy text</button>
-        <button class="note-action-btn note-copy-link" data-url="${escapeHtml(note.timestampedUrl)}">🔗 Copy timestamp</button>
-        <button class="note-action-btn note-play" data-seconds="${Number(note.timestampSeconds) || 0}">▶ Play</button>
+        <div class="note-action">
+          <button class="note-action-btn note-copy-text" type="button">
+            <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
+            <span class="note-action-label">Text</span>
+          </button>
+          <span class="action-feedback note-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+        </div>
+        <div class="note-action">
+          <button class="note-action-btn note-copy-link" type="button" data-url="${escapeHtml(note.timestampedUrl)}">
+            <svg class="lucide lucide-link" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M10 13a5 5 0 0 0 7.07.07l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.07-.07l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+            <span class="note-action-label">Timestamp</span>
+          </button>
+          <span class="action-feedback note-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
+        </div>
+        <div class="note-action">
+          <button class="note-action-btn note-play" type="button" data-seconds="${Number(note.timestampSeconds) || 0}">
+            <svg class="lucide lucide-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            <span class="note-action-label">Play</span>
+          </button>
+        </div>
       </div>
+      <div class="note-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></div>
     `;
 
     // Timestamp click - play from this point (in this tab or a new one)
@@ -1525,23 +1939,66 @@ function renderNotes(notes, filteredVideoId) {
       .querySelector(".note-delete")
       .addEventListener("click", async (e) => {
         e.stopPropagation();
-        await deleteNote(note.id);
-        loadNotes(filteredVideoId);
+        const button = e.currentTarget;
+        if (button.disabled) return;
+        setNoteDeleteFeedback(noteEl, button, {
+          state: "pending",
+          label: "…",
+          message: "Removing note…",
+          ariaLabel: "Removing note",
+        });
+
+        const result = await deleteNote(note.id);
+        if (!noteEl.isConnected) return;
+
+        if (result?.success) {
+          // The storage result is the deletion fact. Re-querying preserves the
+          // existing empty-state and filter behavior after the card is removed.
+          loadNotes(filteredVideoId);
+          return;
+        }
+
+        setNoteDeleteFeedback(noteEl, button, {
+          state: "error",
+          label: "Retry",
+          message: result?.error
+            ? `Could not delete this note: ${result.error}`
+            : "Could not delete this note. Retry.",
+          ariaLabel: "Retry deleting note",
+        });
       });
 
     // Copy text button — copies just the note's text
     noteEl
       .querySelector(".note-copy-text")
       .addEventListener("click", async () => {
+        const btn = noteEl.querySelector(".note-copy-text");
+        if (btn.disabled) return;
+        setLocalActionFeedback(btn, {
+          state: "pending",
+          label: "Copying…",
+          message: "Copying note text…",
+          ariaLabel: "Copying note text",
+        });
         try {
           await navigator.clipboard.writeText(note.text);
-          const btn = noteEl.querySelector(".note-copy-text");
-          btn.textContent = "✓ Copied!";
-          setTimeout(() => {
-            btn.textContent = "⧉ Copy text";
-          }, 2000);
+          if (!btn.isConnected) return;
+          setLocalActionFeedback(btn, {
+            state: "success",
+            label: "✓ Copied",
+            message: "Note text copied.",
+            ariaLabel: "Note text copied",
+          });
         } catch (err) {
           console.error("Copy failed:", err);
+          if (!btn.isConnected) return;
+          setLocalActionFeedback(btn, {
+            state: "error",
+            label: "Retry copy",
+            message:
+              "Could not copy the note text. Select the note text to copy it manually, or try again.",
+            ariaLabel: "Retry copying note text",
+          });
         }
       });
 
@@ -1549,15 +2006,33 @@ function renderNotes(notes, filteredVideoId) {
     noteEl
       .querySelector(".note-copy-link")
       .addEventListener("click", async () => {
+        const btn = noteEl.querySelector(".note-copy-link");
+        if (btn.disabled) return;
+        setLocalActionFeedback(btn, {
+          state: "pending",
+          label: "Copying…",
+          message: "Copying timestamp link…",
+          ariaLabel: "Copying timestamp link",
+        });
         try {
           await navigator.clipboard.writeText(note.timestampedUrl);
-          const btn = noteEl.querySelector(".note-copy-link");
-          btn.textContent = "✓ Copied!";
-          setTimeout(() => {
-            btn.textContent = "🔗 Copy timestamp";
-          }, 2000);
+          if (!btn.isConnected) return;
+          setLocalActionFeedback(btn, {
+            state: "success",
+            label: "✓ Copied",
+            message: "Timestamp link copied.",
+            ariaLabel: "Timestamp link copied",
+          });
         } catch (err) {
           console.error("Copy failed:", err);
+          if (!btn.isConnected) return;
+          setLocalActionFeedback(btn, {
+            state: "error",
+            label: "Retry copy",
+            message: "Could not copy the timestamp link. Select the link below to copy it manually, or try again.",
+            manualCopyText: note.timestampedUrl,
+            ariaLabel: "Retry copying timestamp link",
+          });
         }
       });
 
@@ -1570,17 +2045,35 @@ function renderNotes(notes, filteredVideoId) {
   });
 }
 
+function setNoteDeleteFeedback(noteEl, button, { state, label, message, ariaLabel }) {
+  noteEl.dataset.deleteState = state;
+  button.dataset.feedbackState = state;
+  button.disabled = state === "pending";
+  button.setAttribute("aria-busy", String(state === "pending"));
+  button.setAttribute("aria-label", ariaLabel);
+  button.title = ariaLabel;
+  button.textContent = label;
+
+  const feedback = noteEl.querySelector(".note-feedback");
+  if (!feedback) return;
+  feedback.hidden = !message;
+  feedback.dataset.feedbackState = state;
+  feedback.textContent = message || "";
+  feedback.setAttribute("role", state === "error" ? "alert" : "status");
+}
+
 /**
  * Deletes a note by ID.
  */
 async function deleteNote(noteId) {
   try {
-    await chrome.runtime.sendMessage({
+    return await chrome.runtime.sendMessage({
       action: "deleteNote",
       noteId: noteId,
     });
   } catch (error) {
     console.error("[YouTube Digest Panel] Delete note error:", error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -1591,6 +2084,67 @@ async function deleteNote(noteId) {
 // 30-second chunk is currently being spoken. If the user manually scrolls
 // (e.g., to read ahead), auto-scroll pauses and a "Follow playback" button
 // appears so they can resume it. Highlight always stays active regardless.
+
+function setFollowPlaybackState(state) {
+  const button = document.getElementById("followPlaybackBtn");
+  const status = document.getElementById("followPlaybackStatus");
+  if (!button || !status) return;
+
+  // This control belongs to the transcript reading context only. Keeping the
+  // guard here makes asynchronous scroll events unable to reveal it after the
+  // user has already switched to Overview or Notes.
+  const visibleState =
+    state === "paused" && isTranscriptTabActive() ? "paused" : "inactive";
+  button.dataset.followState = visibleState;
+  button.style.display = visibleState === "paused" ? "inline-flex" : "none";
+
+  if (visibleState === "paused") {
+    button.setAttribute("aria-label", "Resume following playback");
+    button.title = "Resume following playback";
+    status.textContent =
+      "Following playback is paused. Activate Follow playback to resume.";
+    return;
+  }
+
+  if (state === "following") {
+    button.setAttribute("aria-label", "Follow playback");
+    button.title = "Follow playback";
+    status.textContent = "Following playback.";
+    return;
+  }
+
+  button.setAttribute("aria-label", "Follow playback");
+  button.title = "Follow playback";
+  status.textContent = "";
+}
+
+function isTranscriptTabActive() {
+  return document.querySelector('.tab[data-tab="transcript"]')?.classList.contains("active");
+}
+
+function setPlaybackEntryState(entry, isCurrent) {
+  const timestampButton = entry.querySelector(".transcript-time");
+  if (isCurrent) {
+    entry.dataset.playbackState = "current";
+    entry.setAttribute("aria-current", "true");
+    if (timestampButton) {
+      timestampButton.setAttribute(
+        "aria-label",
+        `Currently playing from ${timestampButton.textContent}. Activate to play from this timestamp.`,
+      );
+    }
+    return;
+  }
+
+  delete entry.dataset.playbackState;
+  entry.removeAttribute("aria-current");
+  if (timestampButton) {
+    timestampButton.setAttribute(
+      "aria-label",
+      `Play from ${timestampButton.textContent}`,
+    );
+  }
+}
 
 /**
  * Starts polling the video's current time and highlighting/scrolling
@@ -1603,7 +2157,7 @@ function startPlaybackTracking() {
   if (autoScrollInterval) return;
 
   autoScrollEnabled = true;
-  document.getElementById("followPlaybackBtn").style.display = "none";
+  setFollowPlaybackState("following");
 
   // Poll video time every 500ms
   autoScrollInterval = setInterval(() => playbackTrackingTick(), 500);
@@ -1625,13 +2179,14 @@ function stopPlaybackTracking() {
   }
   autoScrollEnabled = true; // Reset for next time
   lastAutoScrollTime = 0;
-  document.getElementById("followPlaybackBtn").style.display = "none";
+  setFollowPlaybackState("inactive");
 
   // Remove active highlights
   document
     .querySelectorAll(".transcript-entry.active-playback")
     .forEach((el) => {
       el.classList.remove("active-playback");
+      setPlaybackEntryState(el, false);
     });
 }
 
@@ -1658,19 +2213,24 @@ async function playbackTrackingTick() {
 /**
  * Scrolls the transcript to the entry currently being spoken (the one
  * carrying the active-playback highlight). Returns false if nothing is
- * highlighted yet. Stamps lastAutoScrollTime BEFORE scrolling so the scroll
- * events from our own smooth animation aren't mistaken for the user
- * scrolling away (which would re-disable auto-scroll immediately).
+ * highlighted yet. `behavior` may override the normal follow animation when
+ * restoring playback, so recovery cannot be mistaken for a manual scroll.
  */
-function scrollToActiveEntry() {
+function scrollToActiveEntry(behavior = getPlaybackScrollBehavior()) {
   const activeEntry = document.querySelector(
     "#transcriptList .transcript-entry.active-playback",
   );
   if (!activeEntry) return false;
 
   lastAutoScrollTime = Date.now();
-  activeEntry.scrollIntoView({ behavior: "smooth", block: "center" });
+  activeEntry.scrollIntoView({ behavior, block: "center" });
   return true;
+}
+
+function getPlaybackScrollBehavior() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+    ? "auto"
+    : "smooth";
 }
 
 /**
@@ -1705,14 +2265,19 @@ function highlightActiveEntry(currentSeconds) {
   // Skip if this entry is already highlighted (no DOM thrashing)
   if (activeEntry.classList.contains("active-playback")) return;
 
-  // Remove old highlight, add new one
-  entries.forEach((e) => e.classList.remove("active-playback"));
+  // Remove old highlight, add new one. This says only where playback is; it
+  // deliberately does not change the independent follow-playback state.
+  entries.forEach((e) => {
+    e.classList.remove("active-playback");
+    setPlaybackEntryState(e, false);
+  });
   activeEntry.classList.add("active-playback");
+  setPlaybackEntryState(activeEntry, true);
 
   // Only scroll if auto-scroll is enabled
   if (autoScrollEnabled) {
     lastAutoScrollTime = Date.now();
-    activeEntry.scrollIntoView({ behavior: "smooth", block: "center" });
+    activeEntry.scrollIntoView({ behavior: getPlaybackScrollBehavior(), block: "center" });
   }
 }
 
@@ -1729,7 +2294,7 @@ function onContentAreaScroll() {
   // User scrolled manually — disable auto-scroll and show the button
   if (autoScrollEnabled && autoScrollInterval) {
     autoScrollEnabled = false;
-    document.getElementById("followPlaybackBtn").style.display = "block";
+    setFollowPlaybackState("paused");
   }
 }
 
@@ -1791,11 +2356,12 @@ function renderTranscriptSegmentContent(segment, mode, translated, error) {
     translationHtml = "Waiting for translation…";
   }
 
+  const translationState = translated ? "complete" : error ? "error" : "pending";
   if (mode === "bilingual") {
-    return `<span class="transcript-copy"><span class="transcript-original">${original}</span><span class="transcript-translation ${translated ? "" : error ? "translation-error" : "translation-pending"}">${translationHtml}</span></span>`;
+    return `<span class="transcript-copy"><span class="transcript-original">${original}</span><span class="transcript-translation ${translated ? "" : error ? "translation-error" : "translation-pending"}" data-translation-state="${translationState}" role="status" aria-live="polite" aria-atomic="true">${translationHtml}</span></span>`;
   }
 
-  return `<span class="transcript-copy"><span class="transcript-translation ${translated ? "" : error ? "translation-error" : "translation-pending"}">${translationHtml}</span></span>`;
+  return `<span class="transcript-copy"><span class="transcript-translation ${translated ? "" : error ? "translation-error" : "translation-pending"}" data-translation-state="${translationState}" role="status" aria-live="polite" aria-atomic="true">${translationHtml}</span></span>`;
 }
 
 function renderTranscriptModeRows(segments, mode) {
@@ -1823,6 +2389,7 @@ function renderTranscriptModeRows(segments, mode) {
       transcriptTranslationCacheKey(segment),
     );
     div.className = `transcript-entry ${cached ? "translated" : "translating"}`;
+    div.dataset.translationState = cached ? "complete" : "pending";
     div.dataset.seconds = segment.start;
     div.dataset.segmentId = segment.id;
     div.dataset.segmentIndex = index;
@@ -1831,7 +2398,7 @@ function renderTranscriptModeRows(segments, mode) {
     const seconds = Math.floor(segment.start % 60);
     const timestamp = `${minutes}:${String(seconds).padStart(2, "0")}`;
     div.innerHTML = `
-      <span class="transcript-time">${timestamp}</span>
+      <button class="transcript-time" type="button" aria-label="Play from ${timestamp}">${timestamp}</button>
       ${renderTranscriptSegmentContent(segment, mode, cached, "")}
     `;
     div.addEventListener("click", (event) =>
@@ -1895,6 +2462,7 @@ function updateTranslatedRow(segment, index, alignedItem, generation) {
   row.classList.toggle("translated", !!alignedItem.text);
   row.classList.toggle("translating", false);
   row.classList.toggle("translation-failed", !alignedItem.text);
+  row.dataset.translationState = alignedItem.text ? "complete" : "error";
 
   const retry = row.querySelector(".translation-retry-btn");
   if (retry) {
@@ -1979,6 +2547,7 @@ function retryTranslationSegment(index, generation) {
   if (row) {
     row.classList.add("translating");
     row.classList.remove("translation-failed");
+    row.dataset.translationState = "pending";
     const translation = row.querySelector(".transcript-translation");
     if (translation) {
       translation.className = "transcript-translation translation-pending";

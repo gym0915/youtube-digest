@@ -1,0 +1,13 @@
+{
+  "ticket": "08-youtube-host-lifecycle-and-shortcut",
+  "scenario": "DS-11",
+  "contexts": ["watch", "non-watch", "input", "textarea", "contenteditable"],
+  "noteStates": ["hidden", "saving", "saved", "idle-after-navigation"],
+  "invariants": [
+    "Only watch pages inject the existing Digest and Note controls.",
+    "n and N use the existing Note save route only outside editable controls.",
+    "SPA navigation removes every old Digest, Note, Toast, and key-moment marker before re-adapting the current watch page.",
+    "A save response from an invalidated video context cannot restore Saved feedback or a Toast on the new page.",
+    "Re-adaptation creates one default-state Digest and one hidden default-state Note without changing the existing host strategy."
+  ]
+}

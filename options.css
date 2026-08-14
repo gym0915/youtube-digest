@@ -1,13 +1,166 @@
 :root {
   color-scheme: light;
-  --bg: #f7f3ec;
-  --surface: #ffffff;
-  --border: #e7dfd2;
-  --text: #2e2a24;
-  --muted: #6b6258;
-  --accent: #c8674f;
-  --accent-hover: #ad523e;
-  --danger: #9f2d2d;
+  /* ref.*: source values; products consume only sys.* or comp.* below. */
+  --ref-color-brand-red: #ff0000;
+  --ref-color-brand-red-strong: #cc0000;
+  --ref-color-brand-red-hover: #a30000;
+  --ref-color-surface-canvas: #ffffff;
+  --ref-color-surface-subtle: #f9f9f9;
+  --ref-color-surface-control: #f2f2f2;
+  --ref-color-surface-hover: #e5e5e5;
+  --ref-color-text-primary: #0f0f0f;
+  --ref-color-text-secondary: #606060;
+  --ref-color-text-muted: #909090;
+  --ref-color-state-success-foreground: #1b6e4f;
+  --ref-color-state-success-surface: #eaf6f0;
+  --ref-color-state-success-border: #a9d8c1;
+  --ref-color-state-error-foreground: #b3261e;
+  --ref-color-state-error-surface: #fdecea;
+  --ref-color-state-error-border: #e7a7a1;
+  --ref-color-state-warning-foreground: #8a5a00;
+  --ref-color-state-warning-surface: #fff4d6;
+  --ref-color-state-warning-border: #e8c66a;
+  --ref-color-state-info-foreground: #0b5cad;
+  --ref-color-state-info-surface: #eaf2fb;
+  --ref-color-state-info-border: #a9c7ee;
+  --ref-color-state-disabled-foreground: #606060;
+  --ref-color-state-disabled-surface: #f2f2f2;
+  --ref-color-state-disabled-border: #d0d0d0;
+  --ref-color-state-disabled-indicator: #909090;
+  --ref-color-focus-ring: #005fcc;
+  --ref-color-overlay-scrim: rgba(15, 15, 15, 0.55);
+  --ref-color-border-muted: #c0c0c0;
+  --ref-color-playback-surface: rgba(255, 0, 0, 0.08);
+  --ref-space-1: 4px;
+  --ref-space-2: 8px;
+  --ref-space-3: 10px;
+  --ref-space-4: 12px;
+  --ref-space-5: 14px;
+  --ref-space-6: 16px;
+  --ref-space-7: 24px;
+  --ref-space-8: 32px;
+  --ref-radius-xs: 6px;
+  --ref-radius-control: 8px;
+  --ref-radius-card: 12px;
+  --ref-radius-overlay: 16px;
+  --ref-radius-large-surface: 20px;
+  --ref-radius-pill: 9999px;
+  --ref-elevation-raised: 0 2px 8px rgba(0, 0, 0, 0.12);
+  --ref-elevation-overlay: 0 12px 32px rgba(0, 0, 0, 0.2);
+  --ref-font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    sans-serif;
+  --ref-font-reading: var(--ref-font-ui);
+  --ref-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas,
+    "PingFang SC", monospace;
+  --ref-icon-size-14: 14px;
+  --ref-icon-size-16: 16px;
+  --ref-icon-size-20: 20px;
+  --ref-icon-size-24: 24px;
+  --ref-icon-hit-area: 36px;
+
+  /* sys.*: shared semantic mapping */
+  --sys-brand-mark: var(--ref-color-brand-red);
+  --sys-brand-strong: var(--ref-color-brand-red-strong);
+  --sys-action-primary-bg: var(--ref-color-brand-red-strong);
+  --sys-action-primary-fg: var(--ref-color-surface-canvas);
+  --sys-action-primary-hover: var(--ref-color-brand-red-hover);
+  --sys-surface-canvas: var(--ref-color-surface-canvas);
+  --sys-surface-subtle: var(--ref-color-surface-subtle);
+  --sys-surface-control: var(--ref-color-surface-control);
+  --sys-surface-hover: var(--ref-color-surface-hover);
+  --sys-text-primary: var(--ref-color-text-primary);
+  --sys-text-secondary: var(--ref-color-text-secondary);
+  --sys-text-muted: var(--ref-color-text-muted);
+  --sys-border-default: var(--ref-color-surface-hover);
+  --sys-border-strong: var(--ref-color-state-disabled-border);
+  --sys-border-muted: var(--ref-color-border-muted);
+  --sys-border-interactive: var(--ref-color-brand-red-strong);
+  --sys-state-success-foreground: var(--ref-color-state-success-foreground);
+  --sys-state-success-surface: var(--ref-color-state-success-surface);
+  --sys-state-success-border: var(--ref-color-state-success-border);
+  --sys-state-success-indicator: var(--ref-color-state-success-foreground);
+  --sys-state-error-foreground: var(--ref-color-state-error-foreground);
+  --sys-state-error-surface: var(--ref-color-state-error-surface);
+  --sys-state-error-border: var(--ref-color-state-error-border);
+  --sys-state-error-indicator: var(--ref-color-state-error-foreground);
+  --sys-state-warning-foreground: var(--ref-color-state-warning-foreground);
+  --sys-state-warning-surface: var(--ref-color-state-warning-surface);
+  --sys-state-warning-border: var(--ref-color-state-warning-border);
+  --sys-state-warning-indicator: var(--ref-color-state-warning-foreground);
+  --sys-state-info-foreground: var(--ref-color-state-info-foreground);
+  --sys-state-info-surface: var(--ref-color-state-info-surface);
+  --sys-state-info-border: var(--ref-color-state-info-border);
+  --sys-state-info-indicator: var(--ref-color-state-info-foreground);
+  --sys-state-disabled-foreground: var(--ref-color-state-disabled-foreground);
+  --sys-state-disabled-surface: var(--ref-color-state-disabled-surface);
+  --sys-state-disabled-border: var(--ref-color-state-disabled-border);
+  --sys-state-disabled-indicator: var(--ref-color-state-disabled-indicator);
+  --sys-state-focus-ring-color: var(--ref-color-focus-ring);
+  --sys-state-focus-ring-width: 2px;
+  --sys-state-focus-ring-offset: 2px;
+  --sys-state-focus-surface: var(--ref-color-state-info-surface);
+  --sys-interaction-hover: var(--ref-color-surface-subtle);
+  --sys-interaction-pressed: var(--ref-color-surface-hover);
+  --sys-interaction-selected: var(--ref-color-surface-control);
+  --sys-interaction-playback-surface: var(--ref-color-playback-surface);
+  --sys-interaction-playback-indicator: var(--ref-color-brand-red-strong);
+  --sys-interaction-loading-indicator: var(--ref-color-brand-red-strong);
+  --sys-layout-inline-gap: var(--ref-space-2);
+  --sys-layout-control-gap: var(--ref-space-4);
+  --sys-layout-card-padding-compact: var(--ref-space-5);
+  --sys-layout-card-padding-comfortable: var(--ref-space-7);
+  --sys-layout-panel-inset: var(--ref-space-6);
+  --sys-layout-section-gap: var(--ref-space-7);
+  --sys-shape-badge: var(--ref-radius-xs);
+  --sys-shape-control: var(--ref-radius-control);
+  --sys-shape-card: var(--ref-radius-card);
+  --sys-shape-overlay: var(--ref-radius-overlay);
+  --sys-shape-large-surface: var(--ref-radius-large-surface);
+  --sys-shape-pill: var(--ref-radius-pill);
+  --sys-elevation-raised: var(--ref-elevation-raised);
+  --sys-elevation-overlay: var(--ref-elevation-overlay);
+  --sys-overlay-scrim: var(--ref-color-overlay-scrim);
+  --sys-font-ui: var(--ref-font-ui);
+  --sys-font-reading: var(--ref-font-reading);
+  --sys-font-mono: var(--ref-font-mono);
+  --sys-type-title: 500 18px/1.35 var(--sys-font-ui);
+  --sys-type-heading: 500 16px/1.4 var(--sys-font-ui);
+  --sys-type-body: 400 14px/1.6 var(--sys-font-reading);
+  --sys-type-body-medium: 500 14px/1.6 var(--sys-font-reading);
+  --sys-type-label: 500 13px/1.4 var(--sys-font-ui);
+  --sys-type-meta: 400 12px/1.45 var(--sys-font-ui);
+  --sys-type-timestamp: 500 12px/1.35 var(--sys-font-mono);
+  --sys-icon-default: var(--ref-color-text-primary);
+  --sys-icon-muted: var(--ref-color-text-muted);
+  --sys-icon-interactive: var(--ref-color-brand-red-strong);
+  --sys-icon-brand: var(--ref-color-brand-red);
+  --sys-icon-state: currentColor;
+  --sys-icon-hit-area: var(--ref-icon-hit-area);
+
+  /* comp.*: Settings surface aliases */
+  --comp-settings-canvas: var(--sys-surface-canvas);
+  --comp-settings-card-bg: var(--sys-surface-canvas);
+  --comp-settings-card-border: var(--sys-border-default);
+  --comp-settings-card-radius: var(--sys-shape-card);
+  --comp-settings-card-padding: var(--sys-layout-card-padding-comfortable);
+  --comp-settings-field-bg: var(--sys-surface-canvas);
+  --comp-settings-field-border: var(--sys-border-default);
+  --comp-segmented-control-bg: var(--sys-surface-control);
+  --comp-segmented-control-selected-bg: var(--sys-surface-canvas);
+  --comp-status-message-bg: var(--sys-surface-subtle);
+  --comp-action-chip-bg: var(--sys-surface-canvas);
+  --comp-icon-button-size: var(--sys-icon-hit-area);
+
+  /* Existing selectors remain stable through sys/comp compatibility aliases. */
+  --bg: var(--comp-settings-canvas);
+  --surface: var(--comp-settings-card-bg);
+  --border: var(--comp-settings-card-border);
+  --text: var(--sys-text-primary);
+  --muted: var(--sys-text-secondary);
+  --accent: var(--sys-action-primary-bg);
+  --accent-hover: var(--sys-action-primary-hover);
+  --danger: var(--sys-state-error-foreground);
 }
 
 * {
@@ -18,8 +171,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font: 400 15px/1.55 var(--sys-font-reading);
 }
 
 .settings-shell {
@@ -40,39 +192,15 @@ header {
 }
 
 .language-switch {
-  display: inline-flex;
   flex: 0 0 auto;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
+  --segmented-control-option-height: 40px;
+  --segmented-control-option-min-width: 96px;
+  --segmented-control-option-padding: 20px;
+  --segmented-control-font: 600 15px/1.2 var(--sys-font-ui);
 }
 
 .language-switch .language-option {
-  min-width: 62px;
-  padding: 5px 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.language-switch .language-option:hover {
-  border-color: transparent;
-  color: var(--text);
-}
-
-.language-switch .language-option[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 4px rgba(46, 42, 36, 0.14);
-}
-
-.language-switch .language-option:focus-visible {
-  outline: 3px solid rgba(200, 103, 79, 0.28);
-  outline-offset: 1px;
+  min-width: var(--segmented-control-option-min-width);
 }
 
 .eyebrow {
@@ -85,9 +213,8 @@ header {
 
 h1 {
   margin: 6px 0 8px;
-  font-size: clamp(30px, 5vw, 46px);
-  line-height: 1.08;
-  letter-spacing: -0.04em;
+  font: var(--sys-type-title);
+  letter-spacing: 0;
 }
 
 .lede,
@@ -97,21 +224,26 @@ h1 {
 
 .lede {
   max-width: 650px;
-  font-size: 17px;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .card {
   margin: 18px 0;
-  padding: 24px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface);
-  box-shadow: 0 10px 30px rgba(46, 42, 36, 0.05);
+  padding: var(--comp-settings-card-padding);
+  border: 1px solid var(--comp-settings-card-border);
+  border-radius: var(--comp-settings-card-radius);
+  background: var(--comp-settings-card-bg);
+  box-shadow: var(--sys-elevation-raised);
 }
 
 h2 {
   margin: 0 0 18px;
   font-size: 19px;
+}
+
+.settings-section-heading {
+  font: var(--sys-type-heading);
 }
 
 label {
@@ -126,33 +258,66 @@ button {
   font: inherit;
 }
 
+.settings-field > label {
+  font: var(--sys-type-label);
+}
+
 input,
 textarea {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fff;
+  border-radius: var(--sys-shape-control);
+  background: var(--comp-settings-field-bg);
   color: var(--text);
 }
 
-input:focus,
-textarea:focus {
-  border-color: var(--accent);
-  outline: 3px solid rgba(200, 103, 79, 0.14);
+.settings-field input {
+  min-height: 44px;
+  font: var(--sys-type-body);
+}
+
+input:focus-visible,
+textarea:focus-visible {
+  border-color: var(--sys-border-interactive);
+  outline: var(--sys-state-focus-ring-width) solid
+    var(--sys-state-focus-ring-color);
+  outline-offset: var(--sys-state-focus-ring-offset);
+}
+
+.settings-field input:focus-visible {
+  outline: none;
 }
 
 textarea {
   min-height: 190px;
   resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--sys-font-mono);
   font-size: 12px;
   line-height: 1.55;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.settings-field input[aria-invalid="true"] {
+  border-color: var(--sys-state-error-border);
+  background: var(--sys-state-error-surface);
+}
+
+.settings-field input[aria-invalid="true"]:focus-visible {
+  border-color: var(--sys-border-interactive);
 }
 
 .help {
   margin: 8px 0 0;
   font-size: 13px;
+}
+
+.settings-field .help,
+.privacy-note,
+.provider-summary,
+.status-message {
+  overflow-wrap: anywhere;
 }
 
 a {
@@ -162,10 +327,12 @@ a {
 .privacy-note {
   margin-top: 18px;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: #f8eee9;
-  color: #60483f;
+  border: 1px solid var(--sys-state-info-border);
+  border-radius: var(--sys-shape-control);
+  background: var(--sys-state-info-surface);
+  color: var(--sys-state-info-foreground);
   font-size: 13px;
+  line-height: 1.55;
 }
 
 .provider-summary,
@@ -180,30 +347,31 @@ a {
   justify-content: space-between;
   margin-bottom: 18px;
   padding: 13px 14px;
-  border: 1px solid #ecd8ce;
-  border-radius: 12px;
-  background: #fdf6f2;
+  border: 1px solid var(--sys-state-info-border);
+  border-radius: var(--sys-shape-card);
+  background: var(--sys-state-info-surface);
 }
 
 .provider-name {
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .provider-badge,
 .agent-badge {
   padding: 4px 9px;
-  border-radius: 999px;
-  background: #f2e3dc;
-  color: #714b3f;
+  border-radius: var(--sys-shape-pill);
+  background: var(--sys-surface-control);
+  color: var(--sys-text-secondary);
   font-size: 11px;
   font-weight: 800;
 }
 
 .customization-card {
   padding: 0;
-  border-color: #ddc2b7;
-  background: linear-gradient(145deg, #fff 0%, #fff9f6 100%);
-  overflow: hidden;
+  border-color: var(--sys-border-default);
+  background: var(--comp-settings-card-bg);
+  /* Keep the keyboard ring outside the disclosure frame visible. */
+  overflow: visible;
 }
 
 .customization-summary {
@@ -212,7 +380,7 @@ a {
   align-items: center;
   gap: 12px;
   padding: 17px 22px;
-  border-radius: 17px;
+  border-radius: var(--sys-shape-overlay);
   cursor: pointer;
   list-style: none;
   transition: background 0.18s ease;
@@ -225,8 +393,8 @@ a {
 .customization-summary::after {
   width: 8px;
   height: 8px;
-  border-right: 2px solid var(--accent-hover);
-  border-bottom: 2px solid var(--accent-hover);
+  border-right: 2px solid var(--sys-text-secondary);
+  border-bottom: 2px solid var(--sys-text-secondary);
   content: "";
   transform: rotate(45deg);
   transition: transform 0.18s ease;
@@ -237,12 +405,13 @@ a {
 }
 
 .customization-summary:hover {
-  background: #fdf3ee;
+  background: var(--sys-interaction-hover);
 }
 
 .customization-summary:focus-visible {
-  outline: 3px solid rgba(200, 103, 79, 0.28);
-  outline-offset: -3px;
+  outline: var(--sys-state-focus-ring-width) solid
+    var(--sys-state-focus-ring-color);
+  outline-offset: var(--sys-state-focus-ring-offset);
 }
 
 .customization-summary-copy {
@@ -264,7 +433,7 @@ a {
 
 .customization-content {
   padding: 19px 22px 22px;
-  border-top: 1px solid #ead8d0;
+  border-top: 1px solid var(--sys-border-default);
 }
 
 .customization-intro {
@@ -289,10 +458,10 @@ a {
 .prompt-reminder {
   margin: 8px 0 10px;
   padding: 10px 12px;
-  border: 1px solid #e7b9a8;
-  border-radius: 10px;
-  background: #fff2ec;
-  color: #60483f;
+  border: 1px solid var(--sys-state-warning-border);
+  border-radius: var(--sys-shape-control);
+  background: var(--sys-state-warning-surface);
+  color: var(--sys-state-warning-foreground);
   font-size: 13px;
   font-weight: 750;
 }
@@ -302,7 +471,9 @@ a {
 }
 
 .form-actions,
-.data-actions {
+.copy-actions,
+.data-actions,
+.data-operation {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -313,11 +484,112 @@ a {
   margin-top: 18px;
 }
 
+.data-operation {
+  align-items: flex-start;
+}
+
+#settingsForm .form-actions {
+  align-items: flex-start;
+  margin: 22px 0 8px;
+}
+
+#settingsForm .primary {
+  min-height: 44px;
+  font: var(--sys-type-label);
+}
+
+.status-message {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(100%, 520px);
+  min-height: 22px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--sys-shape-control);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.status-message[hidden] {
+  display: none;
+}
+
+.status-message-icon {
+  display: inline-grid;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.status-message[data-state="loading"] {
+  border-color: var(--sys-state-info-border);
+  background: var(--sys-state-info-surface);
+  color: var(--sys-state-info-foreground);
+}
+
+.status-message[data-state="loading"] .status-message-icon {
+  color: var(--sys-interaction-loading-indicator);
+}
+
+.status-message[data-state="loading"] .status-message-icon::before {
+  content: "…";
+}
+
+.status-message[data-state="warning"] {
+  border-color: var(--sys-state-warning-border);
+  background: var(--sys-state-warning-surface);
+  color: var(--sys-state-warning-foreground);
+}
+
+.status-message[data-state="warning"] .status-message-icon::before {
+  content: "!";
+}
+
+.status-message[data-state="error"] {
+  border-color: var(--sys-state-error-border);
+  background: var(--sys-state-error-surface);
+  color: var(--sys-state-error-foreground);
+}
+
+.status-message[data-state="error"] .status-message-icon::before {
+  content: "!";
+}
+
+.status-message[data-state="success"] {
+  border-color: var(--sys-state-success-border);
+  background: var(--sys-state-success-surface);
+  color: var(--sys-state-success-foreground);
+}
+
+.status-message[data-state="success"] .status-message-icon::before {
+  content: "✓";
+}
+
+.field-status {
+  display: flex;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.configuration-status {
+  display: flex;
+  width: 100%;
+  margin: 0 0 18px;
+}
+
 button {
   padding: 10px 15px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: #fff;
+  border-radius: var(--sys-shape-pill);
+  background: var(--comp-action-chip-bg);
   color: var(--text);
   cursor: pointer;
   font-weight: 700;
@@ -328,24 +600,22 @@ button:hover {
 }
 
 button.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+  border-color: var(--sys-action-primary-bg);
+  background: var(--sys-action-primary-bg);
+  color: var(--sys-action-primary-fg);
 }
 
-button.primary:hover {
-  background: var(--accent-hover);
+button.primary:hover:not(:disabled) {
+  background: var(--sys-action-primary-hover);
 }
 
 button.danger {
   color: var(--danger);
 }
 
-#saveStatus,
-#dataStatus,
-#copyStatus {
-  color: var(--muted);
-  font-size: 13px;
+.copy-status,
+.data-operation-status {
+  max-width: min(100%, 360px);
 }
 
 .data-card {
@@ -356,6 +626,31 @@ footer {
   margin-top: 28px;
   color: var(--muted);
   font-size: 13px;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: var(--sys-state-focus-ring-width) solid
+    var(--sys-state-focus-ring-color);
+  outline-offset: var(--sys-state-focus-ring-offset);
+}
+
+button:disabled {
+  border-color: var(--sys-state-disabled-border);
+  background: var(--sys-state-disabled-surface);
+  color: var(--sys-state-disabled-foreground);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 620px) {
@@ -398,5 +693,22 @@ footer {
 
   .customization-content {
     padding: 17px;
+  }
+
+  .copy-actions,
+  .data-actions,
+  .data-operation {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .copy-actions > button,
+  .data-operation > button {
+    align-self: flex-start;
+  }
+
+  .copy-status,
+  .data-operation-status {
+    max-width: 100%;
   }
 }
