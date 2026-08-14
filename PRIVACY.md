@@ -85,4 +85,4 @@ Privacy-relevant changes will be documented in this file and in the repository h
 
 ## Questions
 
-For questions, review this policy, the source code, and each provider's documentation, or visit the [YouTube Digest repository](https://github.com/gym0915/youtube-digest/tree/main). For a vulnerability or accidental secret exposure, follow the private process in [SECURITY.md](SECURITY.md).
+For questions, review this policy, the source code, and each provider's documentation, or visit the [YouTube Digest repository](https://github.com/gym0915/youtube-digest). For a vulnerability or accidental secret exposure, follow the private process in [SECURITY.md](SECURITY.md).
