@@ -179,6 +179,47 @@ test("Transcript header exposes and wires Original, Chinese, and bilingual modes
   assert.match(js, /Original \(\$\{language\}\)/);
 });
 
+test("Transcript controls share the fixed header and remain scoped to the Transcript tab", () => {
+  const html = read("sidepanel.html");
+  const css = read("sidepanel.css");
+  const js = read("sidepanel.js");
+  const toolbarIndex = html.indexOf('id="transcriptToolbar"');
+  const contentIndex = html.indexOf('id="contentArea"');
+  const transcriptPanelStart = html.indexOf('id="panelTranscript"');
+  const overviewPanelStart = html.indexOf('id="panelOverview"');
+
+  assert.ok(toolbarIndex > -1, "expected a dedicated Transcript toolbar");
+  assert.ok(
+    toolbarIndex < contentIndex,
+    "the Transcript toolbar must live in the non-scrolling header",
+  );
+  assert.doesNotMatch(
+    html.slice(transcriptPanelStart, overviewPanelStart),
+    /id="transcriptToolbar"|id="transcriptModeControl"/,
+  );
+  assert.match(
+    css,
+    /\.transcript-toolbar\s*\{[^}]*display:\s*flex;[^}]*padding:\s*var\(--sys-layout-inline-gap\) 0/,
+  );
+  assert.match(
+    css,
+    /\.transcript-toolbar\[hidden\]\s*\{[^}]*display:\s*none;/,
+  );
+  assert.doesNotMatch(css, /\.transcript-section-header\s*\{[^}]*position:\s*sticky;/);
+  assert.match(
+    js,
+    /function setTranscriptToolbarVisibility\(visible\)[\s\S]*?toolbar\.hidden = !visible;/,
+  );
+  assert.match(
+    js,
+    /function switchTab\(tabName\)[\s\S]*?setTranscriptToolbarVisibility\(tabName === "transcript"\);/,
+  );
+  assert.match(
+    js,
+    /function showState\(state\)[\s\S]*?state === "results" && activeTab === "transcript"/,
+  );
+});
+
 test("semantic segmentation rebuilds sentences across caption boundaries", () => {
   const { groupTranscriptEntries } = loadSidepanelHelpers();
   const segments = groupTranscriptEntries(

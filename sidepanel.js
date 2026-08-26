@@ -89,7 +89,8 @@ function sendTranslationMessage(message) {
 // --- Auto-scroll state (follow video playback in transcript) ---
 let autoScrollEnabled = true; // True = scroll transcript to follow video playback
 let autoScrollInterval = null; // setInterval ID for polling video time
-let lastAutoScrollTime = 0; // Timestamp of last programmatic scroll (ignores scroll events within 1s)
+let lastUserScrollIntentTime = 0;
+const USER_SCROLL_INTENT_WINDOW_MS = 1_000;
 
 // ============================================================
 // TRANSCRIPT GROUPING
@@ -1082,6 +1083,11 @@ function exportTranscript() {
 // UI STATE MANAGEMENT
 // ============================================================
 
+function setTranscriptToolbarVisibility(visible) {
+  const toolbar = document.getElementById("transcriptToolbar");
+  if (toolbar) toolbar.hidden = !visible;
+}
+
 function showState(state) {
   document.getElementById("welcomeState").style.display =
     state === "welcome" ? "flex" : "none";
@@ -1100,6 +1106,11 @@ function showState(state) {
   // which is why the tabs could vanish when re-opening an already-analyzed video.
   document.getElementById("tabsNav").style.display =
     state === "results" ? "flex" : "none";
+
+  const activeTab = document.querySelector(".tab.active")?.dataset.tab;
+  setTranscriptToolbarVisibility(
+    state === "results" && activeTab === "transcript",
+  );
 
   if (state !== "results") {
     stopPlaybackTracking();
@@ -1149,6 +1160,8 @@ function switchTab(tabName) {
     panel.classList.toggle("active", active);
     panel.setAttribute("aria-hidden", String(!active));
   });
+
+  setTranscriptToolbarVisibility(tabName === "transcript");
 
   // Start/stop playback tracking based on which tab is active
   if (tabName === "transcript") {
@@ -2153,6 +2166,7 @@ function startPlaybackTracking() {
   if (autoScrollInterval) return;
 
   autoScrollEnabled = true;
+  lastUserScrollIntentTime = 0;
   setFollowPlaybackState("following");
 
   // Poll video time every 500ms
@@ -2160,8 +2174,21 @@ function startPlaybackTracking() {
 
   // Listen for manual scrolls on the content area
   const contentArea = document.getElementById("contentArea");
+  if (!contentArea) return;
   contentArea.removeEventListener("scroll", onContentAreaScroll);
+  contentArea.removeEventListener("wheel", recordUserScrollIntent);
+  contentArea.removeEventListener("touchstart", recordUserScrollIntent);
+  contentArea.removeEventListener("keydown", recordKeyboardScrollIntent);
+  contentArea.removeEventListener("pointerdown", recordScrollbarScrollIntent);
   contentArea.addEventListener("scroll", onContentAreaScroll);
+  contentArea.addEventListener("wheel", recordUserScrollIntent, {
+    passive: true,
+  });
+  contentArea.addEventListener("touchstart", recordUserScrollIntent, {
+    passive: true,
+  });
+  contentArea.addEventListener("keydown", recordKeyboardScrollIntent);
+  contentArea.addEventListener("pointerdown", recordScrollbarScrollIntent);
 }
 
 /**
@@ -2174,7 +2201,7 @@ function stopPlaybackTracking() {
     autoScrollInterval = null;
   }
   autoScrollEnabled = true; // Reset for next time
-  lastAutoScrollTime = 0;
+  lastUserScrollIntentTime = 0;
   setFollowPlaybackState("inactive");
 
   // Remove active highlights
@@ -2218,7 +2245,6 @@ function scrollToActiveEntry(behavior = getPlaybackScrollBehavior()) {
   );
   if (!activeEntry) return false;
 
-  lastAutoScrollTime = Date.now();
   activeEntry.scrollIntoView({ behavior, block: "center" });
   return true;
 }
@@ -2272,25 +2298,61 @@ function highlightActiveEntry(currentSeconds) {
 
   // Only scroll if auto-scroll is enabled
   if (autoScrollEnabled) {
-    lastAutoScrollTime = Date.now();
     activeEntry.scrollIntoView({ behavior: getPlaybackScrollBehavior(), block: "center" });
   }
 }
 
 /**
  * Scroll event handler for the content area.
- * Detects manual scrolling and disables auto-scroll so the user
- * can read at their own pace without being yanked back.
+ * Detects intentional user scrolling and disables auto-scroll so the user
+ * can read at their own pace without being yanked back. scrollIntoView()
+ * emits ordinary scroll events too (and smooth scrolling can finish well
+ * after it starts), so a scroll event by itself is not evidence of a manual
+ * action.
  */
 function onContentAreaScroll() {
-  // Ignore scroll events within 1 second of a programmatic scroll
-  // (smooth scroll animations can last longer than a simple boolean flag)
-  if (Date.now() - lastAutoScrollTime < 1000) return;
+  const hasRecentUserScrollIntent =
+    Date.now() - lastUserScrollIntentTime <= USER_SCROLL_INTENT_WINDOW_MS;
+  if (!hasRecentUserScrollIntent) return;
 
   // User scrolled manually — disable auto-scroll and show the button
   if (autoScrollEnabled && autoScrollInterval) {
     autoScrollEnabled = false;
     setFollowPlaybackState("paused");
+  }
+}
+
+function recordUserScrollIntent() {
+  lastUserScrollIntentTime = Date.now();
+}
+
+function recordKeyboardScrollIntent(event) {
+  const scrollKeys = new Set([
+    "ArrowDown",
+    "ArrowUp",
+    "PageDown",
+    "PageUp",
+    "Home",
+    "End",
+    " ",
+  ]);
+  if (scrollKeys.has(event.key)) recordUserScrollIntent();
+}
+
+function recordScrollbarScrollIntent(event) {
+  const contentArea = event.currentTarget;
+  const bounds = contentArea?.getBoundingClientRect?.();
+  if (!bounds || typeof event.clientX !== "number") return;
+
+  // Wheel/touch/keyboard cover ordinary reading. This covers the remaining
+  // scrollbar-thumb path without treating clicks on transcript rows as scroll
+  // intent.
+  const scrollbarEdgeWidth = Math.max(
+    16,
+    (contentArea.offsetWidth || 0) - (contentArea.clientWidth || 0),
+  );
+  if (event.clientX >= bounds.right - scrollbarEdgeWidth) {
+    recordUserScrollIntent();
   }
 }
 

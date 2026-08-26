@@ -71,6 +71,75 @@
           tabindex="-1"
         >Notes</button>
       </div>
+
+      <!-- Transcript controls live in the fixed header so they remain visibly
+           connected to the active Transcript tab while the transcript scrolls. -->
+      <div
+        class="transcript-toolbar"
+        id="transcriptToolbar"
+        aria-label="Transcript controls"
+        hidden
+      >
+        <div
+          class="transcript-mode-control"
+          id="transcriptModeControl"
+          role="group"
+          aria-label="Transcript language"
+        >
+          <button
+            class="transcript-mode-btn active"
+            type="button"
+            data-transcript-mode="original"
+            aria-pressed="true"
+          >Original</button>
+          <button
+            class="transcript-mode-btn"
+            type="button"
+            data-transcript-mode="zh"
+            aria-pressed="false"
+          >中文</button>
+          <button
+            class="transcript-mode-btn"
+            type="button"
+            data-transcript-mode="bilingual"
+            aria-pressed="false"
+          >双语</button>
+          <span
+            class="translation-spinner"
+            id="langSpinner"
+            role="status"
+            aria-live="polite"
+            aria-label="Translation in progress"
+          ></span>
+        </div>
+        <div class="transcript-actions">
+          <button
+            class="transcript-action-btn"
+            id="copyTranscriptBtn"
+            type="button"
+            title="Copy transcript"
+            aria-label="Copy transcript"
+          >
+            <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+            </svg>
+          </button>
+          <button
+            class="transcript-action-btn"
+            id="exportTranscriptBtn"
+            type="button"
+            title="Export transcript"
+            aria-label="Export transcript"
+          >
+            <svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" x2="12" y1="15" y2="3" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- MAIN CONTENT -->
@@ -132,67 +201,6 @@
           aria-hidden="false"
         >
           <div class="section">
-            <div class="section-header transcript-section-header">
-              <div
-                class="transcript-mode-control"
-                id="transcriptModeControl"
-                role="group"
-                aria-label="Transcript language"
-              >
-                <button
-                  class="transcript-mode-btn active"
-                  type="button"
-                  data-transcript-mode="original"
-                  aria-pressed="true"
-                >Original</button>
-                <button
-                  class="transcript-mode-btn"
-                  type="button"
-                  data-transcript-mode="zh"
-                  aria-pressed="false"
-                >中文</button>
-                <button
-                  class="transcript-mode-btn"
-                  type="button"
-                  data-transcript-mode="bilingual"
-                  aria-pressed="false"
-                >双语</button>
-                <span
-                  class="translation-spinner"
-                  id="langSpinner"
-                  role="status"
-                  aria-live="polite"
-                  aria-label="Translation in progress"
-                ></span>
-              </div>
-              <div class="transcript-actions">
-                <button
-                  class="transcript-action-btn"
-                  id="copyTranscriptBtn"
-                  type="button"
-                  title="Copy transcript"
-                  aria-label="Copy transcript"
-                >
-                  <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                  </svg>
-                </button>
-                <button
-                  class="transcript-action-btn"
-                  id="exportTranscriptBtn"
-                  type="button"
-                  title="Export transcript"
-                  aria-label="Export transcript"
-                >
-                  <svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" x2="12" y1="15" y2="3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
             <div id="transcriptList"></div>
           </div>
         </div>

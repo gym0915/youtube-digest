@@ -485,10 +485,18 @@ body {
   border-bottom: none;
 }
 
-.transcript-section-header {
+.transcript-toolbar {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sys-layout-control-gap);
+  margin: 0;
+  padding: var(--sys-layout-inline-gap) 0
+    var(--sys-layout-card-padding-compact);
+}
+
+.transcript-toolbar[hidden] {
+  display: none;
 }
 
 .transcript-mode-control {
@@ -1919,7 +1927,7 @@ button:focus-visible,
     gap: var(--sys-layout-section-gap);
   }
 
-  .transcript-section-header {
+  .transcript-toolbar {
     align-items: flex-start;
     flex-wrap: wrap;
   }
