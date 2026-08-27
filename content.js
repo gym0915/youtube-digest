@@ -512,7 +512,10 @@ function createDigestButton() {
 }
 
 function updateDigestButtonCopy(button) {
-  if (!button || (!button.isConnected && button !== ytdDigestButton)) return;
+  // createDigestButton localizes before the element is inserted into YouTube's
+  // action row. Do not use connection state as a guard here or the first
+  // render falls back to an empty/stale label until a later language change.
+  if (!button) return;
   button.setAttribute("aria-label", t("host.open"));
   const label = button.querySelector?.(".ytd-digest-label");
   if (label) label.textContent = t("host.digest");

@@ -337,6 +337,28 @@ test("DS-11 never injects the existing controls on a non-watch page", () => {
   assert.equal(event.stopped, false);
 });
 
+test("newly created host controls receive the saved locale before insertion", async () => {
+  const harness = createHarness({
+    sendMessage: async (message) => {
+      if (message.action === "getUiLanguage") {
+        return { success: true, language: "zh-CN" };
+      }
+      return { success: false };
+    },
+  });
+  await harness.context.initializeUiLanguage();
+
+  const button = harness.document.createElement("button");
+  const label = harness.document.createElement("span");
+  label.className = "ytd-digest-label";
+  button.appendChild(label);
+
+  harness.context.updateDigestButtonCopy(button);
+
+  assert.equal(label.textContent, "摘要");
+  assert.equal(button.getAttribute("aria-label"), "打开 YouTube Digest");
+});
+
 test("DS-11 removes invalidated host feedback and re-adapts exactly one default control set", async () => {
   const saveGate = createDeferred();
   const savedNote = {
