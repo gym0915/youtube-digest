@@ -29,6 +29,7 @@ let currentChannelName = "";
 let currentVideoDescription = "";
 let currentVideoDuration = 0;
 let isAnalysisLoading = false; // Track if analysis is in progress
+let transcriptCopyFeedbackResetTimer = null;
 let analysisGeneration = 0; // Invalidates Overview responses from an older video.
 let notesRequestGeneration = 0; // Ignores notes responses for an older filter/video.
 let explanationGeneration = 0; // Lets closing or changing video end only the visual presentation.
@@ -1515,9 +1516,24 @@ async function copyToClipboard(text) {
   }
 }
 
+function resetTranscriptCopyFeedback(button) {
+  if (!button) return;
+
+  delete button.dataset.feedbackState;
+  button.disabled = false;
+  button.setAttribute("aria-busy", "false");
+  button.setAttribute("aria-label", t("sidepanel.copyTranscript"));
+  button.title = t("sidepanel.copyTranscript");
+}
+
 async function copyToClipboardWithFeedback(text, buttonId) {
   const btn = document.getElementById(buttonId);
   if (!btn || btn.disabled) return;
+
+  if (transcriptCopyFeedbackResetTimer !== null) {
+    clearTimeout(transcriptCopyFeedbackResetTimer);
+    transcriptCopyFeedbackResetTimer = null;
+  }
 
   btn.dataset.feedbackState = "pending";
   btn.disabled = true;
@@ -1532,6 +1548,11 @@ async function copyToClipboardWithFeedback(text, buttonId) {
     btn.dataset.feedbackState = "success";
     btn.setAttribute("aria-label", t("sidepanel.transcriptCopied"));
     btn.title = t("sidepanel.transcriptCopied");
+    transcriptCopyFeedbackResetTimer = setTimeout(() => {
+      transcriptCopyFeedbackResetTimer = null;
+      if (!btn.isConnected || btn.dataset.feedbackState !== "success") return;
+      resetTranscriptCopyFeedback(btn);
+    }, 2_000);
     return;
   }
 

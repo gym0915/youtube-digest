@@ -171,7 +171,9 @@ test("DS-15 preserves the established asynchronous and host responsibilities ins
   assert.match(transcriptCopy, /btn\.dataset\.feedbackState = "error"/);
   assert.match(transcriptCopy, /btn\.setAttribute\("aria-label", t\("sidepanel\.transcriptCopied"\)\)/);
   assert.match(transcriptCopy, /btn\.setAttribute\("aria-label", t\("sidepanel\.retryCopyTranscript"\)\)/);
-  assert.doesNotMatch(transcriptCopy, /setTimeout\s*\(/);
+  assert.match(transcriptCopy, /setTimeout\([\s\S]*2_000\);/);
+  assert.match(transcriptCopy, /resetTranscriptCopyFeedback\(btn\)/);
+  assert.match(sidePanel.js, /function resetTranscriptCopyFeedback\(button\)[\s\S]*t\("sidepanel\.copyTranscript"\)/);
   assert.doesNotMatch(functionSource(sidePanel.js, "triggerAnalysis", "seekTo"), /setTimeout\s*\(/);
   assert.match(host, /function scheduleNoteButtonStateReset[\s\S]*}, 2000\);/);
   assert.match(host, /ytdNoteToastDismissTimer = setTimeout\([\s\S]*}, 5000\);/);
