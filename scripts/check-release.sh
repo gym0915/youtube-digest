@@ -27,6 +27,7 @@ fail() {
 public_allowlist=(
   "manifest.json"
   "background.js"
+  "i18n.js"
   "settings.js"
   "segmented-control.css"
   "segmented-control.js"
@@ -54,6 +55,7 @@ public_allowlist=(
 required_public_files=(
   "manifest.json"
   "background.js"
+  "i18n.js"
   "settings.js"
   "content.js"
   "sidepanel.html"

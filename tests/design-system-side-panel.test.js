@@ -35,7 +35,7 @@ test("DS-02 defines a stable reading-shell fixture for 320, 390, and 480px", () 
 });
 
 test("DS-02 reading shell retains labels and supplies the three-width geometry path", () => {
-  assert.match(html, /role="tablist"[\s\S]*aria-label="Digest views"/);
+  assert.match(html, /role="tablist"[\s\S]*data-i18n-aria-label="sidepanel\.tabsLabel"/);
   for (const [tab, panel] of [
     ["Transcript", "panelTranscript"],
     ["Overview", "panelOverview"],
@@ -43,7 +43,7 @@ test("DS-02 reading shell retains labels and supplies the three-width geometry p
   ]) {
     assert.match(
       html,
-      new RegExp(`role="tab"[\\s\\S]*aria-controls="${panel}"[\\s\\S]*>${tab}<\\/button>`),
+      new RegExp(`role="tab"[\\s\\S]*aria-controls="${panel}"[\\s\\S]*data-i18n="sidepanel\\.tab${tab}"`),
     );
   }
   assert.match(css, /\.header\s*\{[^}]*padding:\s*var\(--comp-panel-inset\) var\(--comp-panel-inset\) 0;/);
@@ -74,15 +74,15 @@ test("DS-03 exposes static control semantics, keyboard focus, and disabled affor
   assert.match(js, /tab\.setAttribute\("aria-selected", String\(active\)\)/);
   assert.match(js, /tab\.tabIndex = active \? 0 : -1;/);
   assert.match(js, /panel\.setAttribute\("aria-hidden", String\(!active\)\)/);
-  assert.match(js, /<button class="transcript-time" type="button" aria-label="Play from/);
+  assert.match(js, /<button class="transcript-time" type="button" aria-label="\$\{escapeHtml\(t\("transcript\.playFrom"/);
   assert.match(js, /li\.setAttribute\("role", "button"\)/);
-  assert.match(js, /<button class="quote-timestamp" type="button" aria-label="Play from/);
-  assert.match(js, /<button class="note-timestamp" type="button" aria-label="Open note at/);
-  assert.match(js, /class="note-delete" type="button"[\s\S]*aria-label="Delete note"/);
+  assert.match(js, /<button class="quote-timestamp" type="button" aria-label="\$\{escapeHtml\(t\("transcript\.playFrom"/);
+  assert.match(js, /<button class="note-timestamp" type="button" aria-label="\$\{escapeHtml\(t\("notes\.openAt"/);
+  assert.match(js, /class="note-delete" type="button"[\s\S]*aria-label="\$\{escapeHtml\(t\("notes\.delete"/);
   assert.match(css, /\.note-delete\s*\{[^}]*margin-left:\s*auto;[^}]*width:\s*var\(--comp-icon-button-size\);[^}]*height:\s*var\(--comp-icon-button-size\);/);
-  assert.match(js, /note-copy-text[\s\S]*lucide-copy[\s\S]*note-action-label">Text/);
-  assert.match(js, /note-copy-link[\s\S]*lucide-link[\s\S]*note-action-label">Timestamp/);
-  assert.match(js, /note-play[\s\S]*lucide-play[\s\S]*note-action-label">Play/);
+  assert.match(js, /note-copy-text[\s\S]*lucide-copy[\s\S]*note-action-label">\$\{escapeHtml\(t\("notes\.copyText"/);
+  assert.match(js, /note-copy-link[\s\S]*lucide-link[\s\S]*note-action-label">\$\{escapeHtml\(t\("notes\.copyTimestamp"/);
+  assert.match(js, /note-play[\s\S]*lucide-play[\s\S]*note-action-label">\$\{escapeHtml\(t\("notes\.play"/);
   assert.match(css, /button:focus-visible,[\s\S]*outline:\s*var\(--sys-state-focus-ring-width\) solid[\s\S]*outline-offset:\s*var\(--sys-state-focus-ring-offset\);/);
   const quoteDisabled = css.match(/\.quote-save-note-btn:disabled\s*\{([^}]*)\}/)?.[1] || "";
   assert.match(quoteDisabled, /background:\s*var\(--sys-state-disabled-surface\);/);
@@ -92,7 +92,7 @@ test("DS-03 exposes static control semantics, keyboard focus, and disabled affor
 
 test("Notes empty states use the Lucide notebook-pen icon instead of an emoji", () => {
   assert.match(html, /notes-intro[\s\S]*lucide-notebook-pen/);
-  assert.match(js, /function renderNotes[\s\S]*lucide-notebook-pen[\s\S]*Note to save\./);
+  assert.match(js, /function renderNotes[\s\S]*lucide-notebook-pen[\s\S]*notes\.noneSuffix/);
   assert.doesNotMatch(js, /click 📝 Note to save/);
   assert.match(css, /\.notes-intro-icon\s*\{[^}]*width:\s*var\(--sys-icon-size-small\);[^}]*stroke:\s*currentColor;/);
 });
@@ -111,8 +111,8 @@ test("DS-04 keeps transcript feedback tied to cache, request, configuration, and
   assert.match(js, /const cached = await loadFromCache\(videoId\);[\s\S]*?if \(cached\)[\s\S]*?renderTranscript\(\);[\s\S]*?showState\("results"\);/);
   assert.match(js, /showState\("loading"\);[\s\S]*?action: "fetchTranscript"/);
   assert.match(js, /transcriptResult\.error === "NO_SUPADATA_KEY"[\s\S]*?showConfigError\(\{ hasSupadataKey: false, hasAiKey: true \}\);/);
-  assert.match(js, /errorBtn"\)\.textContent = "Open Settings"/);
-  assert.match(js, /errorBtn"\)\.textContent = "Try Again"/);
+  assert.match(js, /errorBtn"\)\.textContent = t\(\s*"sidepanel\.openSettingsAction"/);
+  assert.match(js, /errorBtn"\)\.textContent = t\("sidepanel\.retry"\)/);
 });
 
 test("DS-05 makes Overview lazy, local, readable when empty, and retryable on its real outcome", () => {
@@ -126,10 +126,10 @@ test("DS-05 makes Overview lazy, local, readable when empty, and retryable on it
   assert.match(js, /const requestGeneration = analysisGeneration;/);
   assert.match(js, /if \(requestGeneration !== analysisGeneration\) return;/);
   assert.match(js, /if \(requestGeneration === analysisGeneration\) isAnalysisLoading = false;/);
-  assert.match(js, /renderOverviewStatus\("error", analysisResult\.error \|\| "Unknown error"\);/);
+  assert.match(js, /renderOverviewStatus\([\s\S]*localizeServiceError\(analysisResult\.error\)/);
   assert.match(js, /retry\.addEventListener\("click", triggerAnalysis\);/);
-  assert.match(js, /No chapters were returned for this video\./);
-  assert.match(js, /No key quotes were returned for this video\./);
+  assert.match(js, /t\("overview\.noChapters"\)/);
+  assert.match(js, /t\("overview\.noQuotes"\)/);
   assert.match(css, /\.overview-status--error\s*\{[^}]*border-color:\s*var\(--sys-state-error-border\);[^}]*background:\s*var\(--sys-state-error-surface\);/);
 });
 
@@ -157,13 +157,13 @@ test("DS-07 keeps quote and note feedback local to real clipboard and storage ou
   );
   assert.match(js, /function setLocalActionFeedback\([\s\S]*button\.disabled = state === "pending"/);
   assert.match(js, /action: "saveNote"[\s\S]*videoId: requestVideoId[\s\S]*timestamp: quote\.timestampSeconds/);
-  assert.match(js, /label: "✓ Saved"[\s\S]*message: "Quote saved to this video's notes\."/);
-  assert.match(js, /label: "Retry save"[\s\S]*ariaLabel: "Retry saving this quote as a note"/);
+  assert.match(js, /label: `✓ \$\{t\("overview\.saved"\)\}`[\s\S]*message: t\("overview\.quoteSaved"\)/);
+  assert.match(js, /label: t\("overview\.retrySave"\)[\s\S]*ariaLabel: t\("overview\.retrySaveQuote"\)/);
   assert.match(js, /action: "getNotes"[\s\S]*requestGeneration !== notesRequestGeneration/);
   assert.match(js, /action: "deleteNote"[\s\S]*noteId: noteId/);
   assert.match(js, /if \(result\?\.success\) \{[\s\S]*loadNotes\(filteredVideoId\);/);
-  assert.match(js, /label: "Retry"[\s\S]*ariaLabel: "Retry deleting note"/);
-  assert.match(js, /Select the note text to copy it manually, or try again\./);
+  assert.match(js, /label: t\("notes\.retryDelete"\)[\s\S]*ariaLabel: t\("notes\.retryDeletingAria"\)/);
+  assert.match(js, /t\("notes\.copyTextFailed"\)/);
   assert.match(js, /manualCopyText: note\.timestampedUrl/);
   assert.doesNotMatch(
     js.slice(js.indexOf("function renderAnalysisResults"), js.indexOf("function renderResults")),
@@ -184,11 +184,11 @@ test("DS-07 makes Explain a retryable dialog without cancelling or accepting sta
     "error",
   ]);
   assert.match(js, /role="dialog" aria-modal="true" aria-labelledby="explainModalTitle"/);
-  assert.match(js, /aria-label="Close explanation"/);
+  assert.match(js, /aria-label="\$\{escapeHtml\(t\("explain\.close"\)\)\}"/);
   assert.match(js, /function closeExplanationPresentation\(modal\)[\s\S]*explanationGeneration \+= 1[\s\S]*modal\.remove\(\)/);
   assert.match(js, /function explanationPresentationIsCurrent\([\s\S]*modal\?\.isConnected[\s\S]*requestGeneration === explanationGeneration[\s\S]*videoId === currentVideoId/);
   assert.match(js, /action: "explainSelection"[\s\S]*selectedText: request\.selectedText[\s\S]*transcriptContext: request\.transcriptContext[\s\S]*videoTitle: request\.videoTitle/);
-  assert.match(js, /retryButton\.textContent = "Retry explanation"/);
+  assert.match(js, /retryButton\.textContent = t\("explain\.retry"\)/);
   assert.match(js, /retry: \(\) => requestExplanation\(modal, request\)/);
   assert.match(css, /\.explain-loading-indicator\s*\{[^}]*--sys-state-info/);
   assert.match(css, /\.explain-error\s*\{[^}]*--sys-state-error/);
@@ -196,9 +196,9 @@ test("DS-07 makes Explain a retryable dialog without cancelling or accepting sta
 });
 
 test("DS-07 keeps playback position distinct from following state", () => {
-  assert.match(html, /id="followPlaybackBtn"[\s\S]*aria-label="Resume following playback"[\s\S]*lucide-locate-fixed/);
+  assert.match(html, /id="followPlaybackBtn"[\s\S]*data-i18n-aria-label="follow\.resume"[\s\S]*lucide-locate-fixed/);
   assert.match(html, /id="followPlaybackStatus"[\s\S]*role="status"[\s\S]*aria-live="polite"/);
-  assert.match(js, /function setFollowPlaybackState\(state\)[\s\S]*state === "paused"[\s\S]*Following playback is paused/);
+  assert.match(js, /function setFollowPlaybackState\(state\)[\s\S]*state === "paused"[\s\S]*t\("follow\.paused"\)/);
   assert.match(js, /state === "paused" && isTranscriptTabActive\(\) \? "paused" : "inactive"/);
   assert.match(js, /function isTranscriptTabActive\(\)[\s\S]*data-tab="transcript"[\s\S]*classList\.contains\("active"\)/);
   assert.match(js, /function setPlaybackEntryState\(entry, isCurrent\)[\s\S]*entry\.setAttribute\("aria-current", "true"\)/);

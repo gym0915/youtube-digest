@@ -13,7 +13,7 @@
 
 // Import safe defaults and validation helpers. Secret keys live in
 // chrome.storage.local and are never part of the extension source.
-importScripts("settings.js");
+importScripts("i18n.js", "settings.js");
 
 const DEBUG = false;
 const AI_PROVIDER_IDLE_TIMEOUT_MS = 50_000;
@@ -35,6 +35,29 @@ async function getSettings() {
   const stored = await chrome.storage.local.get(YTD_SETTINGS.STORAGE_KEY);
   return YTD_SETTINGS.normalize(stored[YTD_SETTINGS.STORAGE_KEY]);
 }
+
+async function getUiLanguage() {
+  return YTD_I18N.readPreferredLanguage(chrome.storage.local);
+}
+
+async function broadcastUiLanguage(language) {
+  const tabs = await chrome.tabs.query({ url: "https://www.youtube.com/*" });
+  await Promise.all(
+    tabs.map((tab) =>
+      chrome.tabs
+        .sendMessage(tab.id, { action: "uiLanguageChanged", language })
+        .catch(() => {}),
+    ),
+  );
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  const change = changes[YTD_I18N.LANGUAGE_STORAGE_KEY];
+  if (areaName !== "local" || !change) return;
+  broadcastUiLanguage(YTD_I18N.normalizeLanguage(change.newValue)).catch(
+    () => {},
+  );
+});
 
 const promptFileCache = new Map();
 
@@ -301,6 +324,13 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // We need to return true to indicate we'll respond asynchronously
+  if (message.action === "getUiLanguage") {
+    getUiLanguage()
+      .then((language) => sendResponse({ success: true, language }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
   if (message.action === "fetchTranscript") {
     handleFetchTranscript(message.videoId)
       .then(sendResponse)

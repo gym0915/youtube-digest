@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const i18n = require("../i18n.js");
 
 const root = path.resolve(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -49,11 +50,12 @@ function loadSidepanelHelpers({
     },
     chrome: {
       runtime: { onMessage: listeners, sendMessage },
-      storage: { local: storageLocal },
+      storage: { local: storageLocal, onChanged: listeners },
       windows: { getCurrent: () => Promise.resolve({ id: 1 }) },
       tabs: { onUpdated: listeners, onActivated: listeners },
     },
     YTD_SETTINGS: {},
+    YTD_I18N: i18n,
   };
   sandbox.globalThis = sandbox;
   vm.runInNewContext(read("sidepanel.js"), sandbox);
@@ -84,6 +86,7 @@ function loadBackgroundHelpers({
     importScripts() {},
     chrome: {
       storage: {
+        onChanged: listeners,
         local: {
           setAccessLevel: () => Promise.resolve(),
           get: async () => ({ ytd_settings: settings }),
@@ -107,6 +110,7 @@ function loadBackgroundHelpers({
       normalize: (value) => value,
       chatCompletionsUrl: (baseUrl) => `${baseUrl}/chat/completions`,
     },
+    YTD_I18N: i18n,
   };
   sandbox.globalThis = sandbox;
   vm.runInNewContext(read("background.js"), sandbox);
@@ -170,13 +174,13 @@ const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
 test("Transcript header exposes and wires Original, Chinese, and bilingual modes", () => {
   const html = read("sidepanel.html");
   const js = read("sidepanel.js");
-  assert.match(html, /data-transcript-mode="original"[\s\S]*?>Original</);
-  assert.match(html, /data-transcript-mode="zh"[\s\S]*?>\u4e2d\u6587</);
-  assert.match(html, /data-transcript-mode="bilingual"[\s\S]*?>\u53cc\u8bed</);
+  assert.match(html, /data-transcript-mode="original"[\s\S]*data-i18n="transcript\.modeOriginal"/);
+  assert.match(html, /data-transcript-mode="zh"[\s\S]*data-i18n="transcript\.modeChinese"/);
+  assert.match(html, /data-transcript-mode="bilingual"[\s\S]*data-i18n="transcript\.modeBilingual"/);
   assert.match(js, /handleTranscriptModeChange\(button\.dataset\.transcriptMode\)/);
   assert.match(js, /contentType: "transcriptBatch"/);
   assert.doesNotMatch(js, /English \+ Chinese/);
-  assert.match(js, /Original \(\$\{language\}\)/);
+  assert.match(js, /t\("transcript\.originalWithLanguage", \{ language \}\)/);
 });
 
 test("Transcript controls share the fixed header and remain scoped to the Transcript tab", () => {

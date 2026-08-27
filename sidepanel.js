@@ -9,6 +9,9 @@ const DEBUG = false;
 const debugLog = (...args) => {
   if (DEBUG) console.log(...args);
 };
+const I18N = YTD_I18N;
+let currentUiLanguage = I18N.DEFAULT_LANGUAGE;
+const t = (key, params) => I18N.translate(currentUiLanguage, key, params);
 
 // ============================================================
 // STATE
@@ -32,6 +35,9 @@ let explanationGeneration = 0; // Lets closing or changing video end only the vi
 let explainSelectionCleanup = null;
 let youtubeTabId = null; // Store the YouTube tab ID for reliable messaging
 let errorAction = null;
+let renderedNotes = null;
+let renderedNotesFilter = null;
+let visibleError = null;
 
 // --- Translation state ---
 // The public transcript control intentionally supports only the original
@@ -237,6 +243,7 @@ function groupTranscriptEntries(entries, limits = TRANSCRIPT_SEGMENT_LIMITS) {
 // ============================================================
 
 document.addEventListener("DOMContentLoaded", async () => {
+  await initializeUiLanguage();
   window.YTD_SEGMENTED_CONTROL?.initialize(document);
   setupEventListeners();
   await evictOldCacheEntries(20);
@@ -251,6 +258,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   await checkCurrentTab();
+});
+
+async function initializeUiLanguage() {
+  try {
+    currentUiLanguage = await I18N.readPreferredLanguage(chrome.storage.local);
+  } catch (error) {
+    currentUiLanguage = I18N.DEFAULT_LANGUAGE;
+  }
+  applyUiLanguage();
+}
+
+function applyUiLanguage() {
+  I18N.localizeDocument(document, currentUiLanguage);
+  document.title = t("sidepanel.pageTitle");
+  refreshTranscriptUiCopy();
+  if (currentAnalysis) renderAnalysisResults(currentAnalysis);
+  if (renderedNotes) renderNotes(renderedNotes, renderedNotesFilter);
+  if (visibleError?.kind === "config") {
+    renderConfigError(visibleError.configStatus);
+  } else if (visibleError?.kind === "generic") {
+    renderError(visibleError.title, visibleError.message);
+  }
+  const followState = document.getElementById("followPlaybackBtn")?.dataset
+    .followState;
+  if (followState) setFollowPlaybackState(followState);
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  const change = changes[I18N.LANGUAGE_STORAGE_KEY];
+  if (areaName !== "local" || !change) return;
+  currentUiLanguage = I18N.normalizeLanguage(change.newValue);
+  applyUiLanguage();
 });
 
 // Listen for messages from the Digest button on YouTube page
@@ -650,7 +689,7 @@ async function startDigest(videoId, videoUrl) {
   }
 
   showState("loading");
-  updateLoading("Fetching transcript", "");
+  updateLoading(t("sidepanel.loadingTranscript"), "");
 
   const transcriptResult = await chrome.runtime.sendMessage({
     action: "fetchTranscript",
@@ -663,8 +702,8 @@ async function startDigest(videoId, videoUrl) {
       return;
     }
     showError(
-      "No transcript found",
-      transcriptResult.message || transcriptResult.error,
+      t("sidepanel.noTranscript"),
+      localizeServiceError(transcriptResult.error),
     );
     return;
   }
@@ -718,7 +757,10 @@ function renderAnalysisResults(analysis) {
     li.setAttribute("role", "button");
     li.setAttribute(
       "aria-label",
-      `Play from ${chapter.timestamp}: ${chapter.title}`,
+      t("overview.playFromTitle", {
+        timestamp: chapter.timestamp,
+        title: chapter.title,
+      }),
     );
     li.innerHTML = `
       <span class="chapter-timestamp">${escapeHtml(chapter.timestamp)}</span>
@@ -746,7 +788,7 @@ function renderAnalysisResults(analysis) {
   });
   if (!chapters.length) {
     chapterList.innerHTML =
-      '<li class="overview-empty" role="status"><span aria-hidden="true">○</span>No chapters were returned for this video.</li>';
+      `<li class="overview-empty" role="status"><span aria-hidden="true">○</span>${escapeHtml(t("overview.noChapters"))}</li>`;
   }
 
   // Quotes - sort by timestamp (chronological order)
@@ -762,24 +804,24 @@ function renderAnalysisResults(analysis) {
     div.innerHTML = `
       <div class="quote-text">${escapeHtml(quote.quote)}</div>
       <div class="quote-meta">
-        <button class="quote-timestamp" type="button" aria-label="Play from ${escapeHtml(quote.timestamp)}">${escapeHtml(quote.timestamp)}</button>
+        <button class="quote-timestamp" type="button" aria-label="${escapeHtml(t("transcript.playFrom", { timestamp: quote.timestamp }))}">${escapeHtml(quote.timestamp)}</button>
         <div class="quote-actions">
           <div class="quote-action">
-            <button class="quote-save-note-btn" type="button" title="Save this quote as a note">
+            <button class="quote-save-note-btn" type="button" title="${escapeHtml(t("overview.saveQuoteTitle"))}" aria-label="${escapeHtml(t("overview.saveQuoteTitle"))}">
               <svg class="lucide lucide-bookmark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
-              Note
+              ${escapeHtml(t("overview.saveQuote"))}
             </button>
             <span class="action-feedback quote-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
           </div>
           <div class="quote-action">
-            <button class="quote-copy-btn" type="button" title="Copy this quote">
+            <button class="quote-copy-btn" type="button" title="${escapeHtml(t("overview.copyQuoteTitle"))}" aria-label="${escapeHtml(t("overview.copyQuoteTitle"))}">
               <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
                 <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
               </svg>
-              Copy
+              ${escapeHtml(t("overview.copyQuote"))}
             </button>
             <span class="action-feedback quote-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
           </div>
@@ -801,27 +843,27 @@ function renderAnalysisResults(analysis) {
       if (quoteCopyBtn.disabled) return;
       setLocalActionFeedback(quoteCopyBtn, {
         state: "pending",
-        label: "Copying…",
-        message: "Copying this quote…",
-        ariaLabel: "Copying this quote",
+        label: t("overview.copying"),
+        message: t("overview.copyingQuote"),
+        ariaLabel: t("overview.copyingQuote"),
       });
       try {
         await navigator.clipboard.writeText(quote.quote);
         if (!quoteCopyBtn.isConnected) return;
         setLocalActionFeedback(quoteCopyBtn, {
           state: "success",
-          label: "✓ Copied",
-          message: "Quote copied.",
-          ariaLabel: "Quote copied",
+          label: `✓ ${t("overview.copied")}`,
+          message: t("overview.quoteCopied"),
+          ariaLabel: t("overview.quoteCopiedAria"),
         });
       } catch (err) {
         console.error("Copy failed:", err);
         if (!quoteCopyBtn.isConnected) return;
         setLocalActionFeedback(quoteCopyBtn, {
           state: "error",
-          label: "Retry copy",
-          message: "Could not copy the quote. Select the quote text to copy it manually, or try again.",
-          ariaLabel: "Retry copying this quote",
+          label: t("overview.retryCopy"),
+          message: t("overview.copyQuoteFailed"),
+          ariaLabel: t("overview.retryCopyQuote"),
         });
       }
     });
@@ -836,7 +878,7 @@ function renderAnalysisResults(analysis) {
   });
   if (!sortedQuotes.length) {
     quotesList.innerHTML =
-      '<div class="overview-empty" role="status"><span aria-hidden="true">○</span>No key quotes were returned for this video.</div>';
+      `<div class="overview-empty" role="status"><span aria-hidden="true">○</span>${escapeHtml(t("overview.noQuotes"))}</div>`;
   }
 }
 
@@ -851,7 +893,10 @@ function setSelectedOverviewChapter(selectedChapter) {
     chapter.removeAttribute("aria-current");
     const timestamp = chapter.querySelector(".chapter-timestamp")?.textContent;
     const title = chapter.querySelector(".chapter-title")?.textContent;
-    chapter.setAttribute("aria-label", `Play from ${timestamp}: ${title}`);
+    chapter.setAttribute(
+      "aria-label",
+      t("overview.playFromTitle", { timestamp, title }),
+    );
   });
 
   selectedChapter.classList.add("is-selected");
@@ -860,7 +905,7 @@ function setSelectedOverviewChapter(selectedChapter) {
   const title = selectedChapter.querySelector(".chapter-title")?.textContent;
   selectedChapter.setAttribute(
     "aria-label",
-    `Currently selected at ${timestamp}: ${title}`,
+    t("overview.currentlySelected", { timestamp, title }),
   );
 }
 
@@ -914,9 +959,9 @@ async function saveQuoteAsNote(quote, btn) {
   const requestChannelName = currentChannelName;
   setLocalActionFeedback(btn, {
     state: "pending",
-    label: "Saving…",
-    message: "Saving this quote as a note…",
-    ariaLabel: "Saving this quote as a note",
+    label: t("overview.saving"),
+    message: t("overview.savingQuote"),
+    ariaLabel: t("overview.savingQuote"),
   });
 
   try {
@@ -933,9 +978,9 @@ async function saveQuoteAsNote(quote, btn) {
     if (result?.success) {
       setLocalActionFeedback(btn, {
         state: "success",
-        label: "✓ Saved",
-        message: "Quote saved to this video's notes.",
-        ariaLabel: "Quote saved to notes",
+        label: `✓ ${t("overview.saved")}`,
+        message: t("overview.quoteSaved"),
+        ariaLabel: t("overview.quoteSavedAria"),
       });
       // Refresh notes list if on Notes tab
       loadNotes(requestVideoId);
@@ -946,11 +991,13 @@ async function saveQuoteAsNote(quote, btn) {
       );
       setLocalActionFeedback(btn, {
         state: "error",
-        label: "Retry save",
+        label: t("overview.retrySave"),
         message: result?.error
-          ? `Could not save this quote: ${result.error}`
-          : "Could not save this quote. Try again.",
-        ariaLabel: "Retry saving this quote as a note",
+          ? t("overview.saveQuoteFailedWithError", {
+              error: localizeServiceError(result.error),
+            })
+          : t("overview.saveQuoteFailed"),
+        ariaLabel: t("overview.retrySaveQuote"),
       });
     }
   } catch (error) {
@@ -958,9 +1005,9 @@ async function saveQuoteAsNote(quote, btn) {
     if (requestVideoId !== currentVideoId || !btn.isConnected) return;
     setLocalActionFeedback(btn, {
       state: "error",
-      label: "Retry save",
-      message: `Could not save this quote: ${error.message || "Unknown error"}`,
-      ariaLabel: "Retry saving this quote as a note",
+      label: t("overview.retrySave"),
+      message: t("overview.saveQuoteFailed"),
+      ariaLabel: t("overview.retrySaveQuote"),
     });
   }
 }
@@ -1014,14 +1061,7 @@ function renderTranscript() {
   // Show a small badge indicating the transcript came from the video's
   // existing subtitles. (We no longer AI-transcribe audio, so subtitles
   // are the only source.)
-  const existingBadge = document.getElementById("transcriptSourceBadge");
-  if (existingBadge) existingBadge.remove();
-
-  const badge = document.createElement("div");
-  badge.id = "transcriptSourceBadge";
-  badge.className = "transcript-source-badge";
-  badge.innerHTML = `<span class="source-dot source-dot--subs"></span> From video subtitles · ${escapeHtml(getOriginalTranscriptLabel())}`;
-  transcriptList.parentElement.insertBefore(badge, transcriptList);
+  renderTranscriptSourceBadge("original", transcriptList);
 
   // Group entries using smart sentence-boundary + time-guardrail logic
   const grouped = groupTranscriptEntries(currentTranscript);
@@ -1036,7 +1076,7 @@ function renderTranscript() {
     const timestamp = `${minutes}:${String(seconds).padStart(2, "0")}`;
 
     div.innerHTML = `
-      <button class="transcript-time" type="button" aria-label="Play from ${timestamp}">${timestamp}</button>
+      <button class="transcript-time" type="button" aria-label="${escapeHtml(t("transcript.playFrom", { timestamp }))}">${timestamp}</button>
       <span class="transcript-text">${renderSubtitleInlineMarkup(group.text)}</span>
     `;
 
@@ -1050,6 +1090,52 @@ function renderTranscript() {
   startPlaybackTracking();
 }
 
+function transcriptSourceBadgeCopy(mode) {
+  const original = getOriginalTranscriptLabel();
+  const source = t("transcript.fromVideoSubtitles");
+  if (mode === "original") return `${source} · ${original}`;
+  const modeCopy =
+    mode === "bilingual"
+      ? t("transcript.sourceBilingual", { original })
+      : t("transcript.sourceChinese", { original });
+  return `${source} · ${modeCopy}`;
+}
+
+function renderTranscriptSourceBadge(mode, transcriptList) {
+  const existingBadge = document.getElementById("transcriptSourceBadge");
+  if (existingBadge) existingBadge.remove();
+  const badge = document.createElement("div");
+  badge.id = "transcriptSourceBadge";
+  badge.className = "transcript-source-badge";
+  badge.innerHTML = `<span class="source-dot source-dot--subs"></span> ${escapeHtml(transcriptSourceBadgeCopy(mode))}`;
+  transcriptList.parentElement.insertBefore(badge, transcriptList);
+}
+
+function refreshTranscriptUiCopy() {
+  const badge = document.getElementById("transcriptSourceBadge");
+  if (badge) {
+    badge.innerHTML = `<span class="source-dot source-dot--subs"></span> ${escapeHtml(transcriptSourceBadgeCopy(currentTranscriptMode))}`;
+  }
+  document.querySelectorAll(".transcript-time").forEach((button) => {
+    const timestamp = button.textContent;
+    button.setAttribute(
+      "aria-label",
+      button.closest(".transcript-entry")?.classList.contains("active-playback")
+        ? t("transcript.currentlyPlaying", { timestamp })
+        : t("transcript.playFrom", { timestamp }),
+    );
+  });
+  document.querySelectorAll(".translation-pending").forEach((node) => {
+    node.textContent = t("transcript.waiting");
+  });
+  document.querySelectorAll(".translation-error-message").forEach((node) => {
+    node.textContent = t(node.dataset.i18nError || "transcript.failed");
+  });
+  document.querySelectorAll(".translation-retry-btn").forEach((button) => {
+    button.textContent = t("transcript.retry");
+  });
+}
+
 function copyTranscript() {
   copyToClipboardWithFeedback(currentTranscriptText || "", "copyTranscriptBtn");
 }
@@ -1059,21 +1145,21 @@ function exportTranscript() {
   const videoUrl = `https://youtube.com/watch?v=${currentVideoId}`;
 
   let exportText = "";
-  exportText += `TRANSCRIPT\n`;
+  exportText += `${t("export.transcript")}\n`;
   exportText += `${"=".repeat(60)}\n\n`;
-  exportText += `Title: ${currentVideoTitle || "Unknown"}\n`;
-  exportText += `Channel: ${currentChannelName || "Unknown"}\n`;
-  exportText += `URL: ${videoUrl}\n`;
+  exportText += `${t("export.title")}: ${currentVideoTitle || t("export.unknown")}\n`;
+  exportText += `${t("export.channel")}: ${currentChannelName || t("export.unknown")}\n`;
+  exportText += `${t("export.url")}: ${videoUrl}\n`;
   exportText += `\n${"—".repeat(60)}\n\n`;
 
   if (currentVideoDescription) {
-    exportText += `DESCRIPTION:\n${currentVideoDescription}\n`;
+    exportText += `${t("export.description")}:\n${currentVideoDescription}\n`;
     exportText += `\n${"—".repeat(60)}\n\n`;
   }
 
-  exportText += `TRANSCRIPT:\n\n${transcriptContent}\n`;
+  exportText += `${t("export.transcript")}:\n\n${transcriptContent}\n`;
   exportText += `\n${"—".repeat(60)}\n`;
-  exportText += `Exported by YouTube Digest\n`;
+  exportText += `${t("export.credit")}\n`;
 
   const filename = `${sanitizeFilename(currentVideoTitle)}-transcript.txt`;
   downloadTextFile(exportText, filename);
@@ -1089,6 +1175,7 @@ function setTranscriptToolbarVisibility(visible) {
 }
 
 function showState(state) {
+  if (state !== "error") visibleError = null;
   document.getElementById("welcomeState").style.display =
     state === "welcome" ? "flex" : "none";
   document.getElementById("loadingState").style.display =
@@ -1123,23 +1210,48 @@ function updateLoading(title, subtitle) {
 }
 
 function showError(title, message) {
+  visibleError = { kind: "generic", title, message };
+  renderError(title, message);
+}
+
+function localizeServiceError(errorCode) {
+  const keys = {
+    NO_TRANSCRIPT: "sidepanel.noTranscript",
+    INVALID_SUPADATA_KEY: "sidepanel.invalidSupadataKey",
+    RATE_LIMITED: "sidepanel.rateLimited",
+    NO_AI_KEY: "sidepanel.apiKeysMissing",
+  };
+  return t(keys[errorCode] || "sidepanel.unknownError");
+}
+
+function renderError(title, message) {
   errorAction = null;
   showState("error");
   document.getElementById("errorTitle").textContent = title;
   document.getElementById("errorMessage").textContent = message;
-  document.getElementById("errorBtn").textContent = "Try Again";
+  document.getElementById("errorBtn").textContent = t("sidepanel.retry");
 }
 
 function showConfigError(configStatus) {
+  visibleError = { kind: "config", configStatus };
+  renderConfigError(configStatus);
+}
+
+function renderConfigError(configStatus) {
   const missingKeys = [];
   if (!configStatus.hasSupadataKey) missingKeys.push("Supadata");
-  if (!configStatus.hasAiKey) missingKeys.push("AI provider");
+  if (!configStatus.hasAiKey)
+    missingKeys.push(currentUiLanguage === "zh-CN" ? "AI 服务" : "AI provider");
 
   showState("error");
-  document.getElementById("errorTitle").textContent = "API Keys Missing";
-  document.getElementById("errorMessage").textContent =
-    `Add your ${missingKeys.join(" and ")} API key${missingKeys.length === 1 ? "" : "s"} in YouTube Digest Settings.`;
-  document.getElementById("errorBtn").textContent = "Open Settings";
+  document.getElementById("errorTitle").textContent = t("sidepanel.apiKeysMissing");
+  document.getElementById("errorMessage").textContent = t(
+    "sidepanel.configureKeys",
+    { providers: missingKeys.join(currentUiLanguage === "zh-CN" ? "和" : " and ") },
+  );
+  document.getElementById("errorBtn").textContent = t(
+    "sidepanel.openSettingsAction",
+  );
   errorAction = () => chrome.runtime.sendMessage({ action: "openOptions" });
 }
 
@@ -1209,20 +1321,20 @@ function renderOverviewStatus(state, message = "") {
 
   if (state === "error") {
     icon.textContent = "!";
-    heading.textContent = "Overview could not be created";
-    copy.textContent = message || "Try again to request chapters and key quotes.";
+    heading.textContent = t("overview.unavailableTitle");
+    copy.textContent = message || t("overview.unavailableMessage");
     const retry = document.createElement("button");
     retry.className = "overview-retry-btn";
     retry.type = "button";
-    retry.textContent = "Retry overview";
+    retry.textContent = t("overview.retry");
     retry.addEventListener("click", triggerAnalysis);
     content.append(retry);
     return;
   }
 
   icon.textContent = "○";
-  heading.textContent = "Overview is ready when you open this tab.";
-  copy.textContent = "Chapters and key quotes load only after you select Overview.";
+  heading.textContent = t("overview.readyTitle");
+  copy.textContent = t("overview.readyMessage");
 }
 
 function setOverviewLoadingIndicators(isLoading) {
@@ -1269,7 +1381,12 @@ async function triggerAnalysis() {
 
     if (!analysisResult.success) {
       setOverviewLoadingIndicators(false);
-      renderOverviewStatus("error", analysisResult.error || "Unknown error");
+      renderOverviewStatus(
+        "error",
+        analysisResult.error
+          ? localizeServiceError(analysisResult.error)
+          : t("sidepanel.aiUnavailable"),
+      );
       return;
     }
 
@@ -1283,7 +1400,7 @@ async function triggerAnalysis() {
     if (requestGeneration !== analysisGeneration) return;
     console.error("[YouTube Digest Panel] Analysis error:", error);
     setOverviewLoadingIndicators(false);
-    renderOverviewStatus("error", error.message || "Unknown error");
+    renderOverviewStatus("error", t("sidepanel.aiUnavailable"));
   } finally {
     if (requestGeneration === analysisGeneration) isAnalysisLoading = false;
   }
@@ -1405,22 +1522,22 @@ async function copyToClipboardWithFeedback(text, buttonId) {
   btn.dataset.feedbackState = "pending";
   btn.disabled = true;
   btn.setAttribute("aria-busy", "true");
-  btn.setAttribute("aria-label", "Copying transcript");
-  btn.title = "Copying transcript";
+  btn.setAttribute("aria-label", t("sidepanel.copyingTranscript"));
+  btn.title = t("sidepanel.copyingTranscript");
 
   const success = await copyToClipboard(text);
   btn.disabled = false;
   btn.setAttribute("aria-busy", "false");
   if (success) {
     btn.dataset.feedbackState = "success";
-    btn.setAttribute("aria-label", "Transcript copied");
-    btn.title = "Transcript copied";
+    btn.setAttribute("aria-label", t("sidepanel.transcriptCopied"));
+    btn.title = t("sidepanel.transcriptCopied");
     return;
   }
 
   btn.dataset.feedbackState = "error";
-  btn.setAttribute("aria-label", "Retry copying transcript");
-  btn.title = "Retry copying transcript";
+  btn.setAttribute("aria-label", t("sidepanel.retryCopyTranscript"));
+  btn.title = t("sidepanel.retryCopyTranscript");
 }
 
 function downloadTextFile(text, filename) {
@@ -1461,7 +1578,7 @@ function setupExplainFeature() {
   const tooltip = document.createElement("div");
   tooltip.id = "explainTooltip";
   tooltip.className = "explain-tooltip";
-  tooltip.innerHTML = `<button class="explain-btn" type="button">💡 Explain</button>`;
+  tooltip.innerHTML = `<button class="explain-btn" type="button">💡 ${escapeHtml(t("explain.action"))}</button>`;
   tooltip.style.display = "none";
   document.body.appendChild(tooltip);
 
@@ -1569,8 +1686,8 @@ async function showExplanation(selectedText) {
   modal.innerHTML = `
     <div class="explain-modal" role="dialog" aria-modal="true" aria-labelledby="explainModalTitle" aria-describedby="explanationContent">
       <div class="explain-modal-header">
-        <div class="explain-modal-title" id="explainModalTitle">Explain</div>
-        <button class="explain-modal-close" id="closeExplain" type="button" aria-label="Close explanation" title="Close explanation">✕</button>
+        <div class="explain-modal-title" id="explainModalTitle">${escapeHtml(t("explain.action"))}</div>
+        <button class="explain-modal-close" id="closeExplain" type="button" aria-label="${escapeHtml(t("explain.close"))}" title="${escapeHtml(t("explain.close"))}">✕</button>
       </div>
       <div class="explain-selected-text">"${escapeHtml(selectedText.substring(0, 200))}${selectedText.length > 200 ? "..." : ""}"</div>
       <div class="explain-modal-content" id="explanationContent"></div>
@@ -1623,7 +1740,7 @@ function renderExplanationState(modal, state, { explanation = "", error = "", re
     indicator.setAttribute("aria-hidden", "true");
     indicator.textContent = "…";
     const copy = document.createElement("span");
-    copy.textContent = "Analyzing selected text…";
+    copy.textContent = t("explain.loading");
     loading.append(indicator, copy);
     contentDiv.append(loading);
     return;
@@ -1651,13 +1768,13 @@ function renderExplanationState(modal, state, { explanation = "", error = "", re
   failure.className = "explain-error";
   failure.setAttribute("role", "alert");
   const title = document.createElement("strong");
-  title.textContent = "Explanation unavailable";
+  title.textContent = t("explain.unavailable");
   const message = document.createElement("p");
-  message.textContent = error || "Try again to explain the selected text.";
+  message.textContent = error || t("explain.retryMessage");
   const retryButton = document.createElement("button");
   retryButton.className = "explain-retry-btn";
   retryButton.type = "button";
-  retryButton.textContent = "Retry explanation";
+  retryButton.textContent = t("explain.retry");
   retryButton.addEventListener("click", retry);
   failure.append(title, message, retryButton);
   contentDiv.append(failure);
@@ -1686,14 +1803,16 @@ async function requestExplanation(modal, request) {
     }
 
     renderExplanationState(modal, "error", {
-      error: result?.error || "Failed to get an explanation.",
+      error: result?.error
+        ? localizeServiceError(result.error)
+        : t("explain.failed"),
       retry: () => requestExplanation(modal, request),
     });
   } catch (error) {
     if (!explanationPresentationIsCurrent(modal, requestGeneration, request.videoId))
       return;
     renderExplanationState(modal, "error", {
-      error: error.message || "Failed to get an explanation.",
+      error: t("explain.failed"),
       retry: () => requestExplanation(modal, request),
     });
   }
@@ -1871,13 +1990,16 @@ function renderNotes(notes, filteredVideoId) {
 
   if (!notesList) return;
 
+  renderedNotes = Array.isArray(notes) ? notes : [];
+  renderedNotesFilter = filteredVideoId;
+
   notesList.innerHTML = "";
 
   if (!notes || notes.length === 0) {
     notesIntro.style.display = "block";
     const emptyMessage = filteredVideoId
-      ? "No notes for this video yet. Hover over the video and click"
-      : "No notes saved yet. Hover over a video and click";
+      ? t("notes.noneForVideo")
+      : t("notes.none");
     notesIntro.innerHTML = `${emptyMessage}
       <svg class="lucide lucide-notebook-pen notes-intro-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M2 6h4" />
@@ -1889,7 +2011,7 @@ function renderNotes(notes, filteredVideoId) {
         <path d="M14 14.5 12 17l2.5-2" />
         <path d="m18.5 7.5-4.1 4.1a2.12 2.12 0 0 0-.5.8l-.7 2.2 2.2-.7a2.12 2.12 0 0 0 .8-.5l4.1-4.1a1.5 1.5 0 0 0-2.1-2.1Z" />
       </svg>
-      Note to save.`;
+      ${escapeHtml(t("notes.noneSuffix"))}`;
     return;
   }
 
@@ -1900,9 +2022,9 @@ function renderNotes(notes, filteredVideoId) {
     noteEl.className = "note-item";
     noteEl.innerHTML = `
       <div class="note-header">
-        <button class="note-timestamp" type="button" aria-label="Open note at ${escapeHtml(note.timestamp)}" data-url="${escapeHtml(note.timestampedUrl)}" data-seconds="${Number(note.timestampSeconds) || 0}">${escapeHtml(note.timestamp)}</button>
+        <button class="note-timestamp" type="button" aria-label="${escapeHtml(t("notes.openAt", { timestamp: note.timestamp }))}" data-url="${escapeHtml(note.timestampedUrl)}" data-seconds="${Number(note.timestampSeconds) || 0}">${escapeHtml(note.timestamp)}</button>
         ${!filteredVideoId ? `<span class="note-video-title">${escapeHtml(note.videoTitle)}</span>` : ""}
-        <button class="note-delete" type="button" data-id="${escapeHtml(note.id)}" title="Delete note" aria-label="Delete note">✕</button>
+        <button class="note-delete" type="button" data-id="${escapeHtml(note.id)}" title="${escapeHtml(t("notes.delete"))}" aria-label="${escapeHtml(t("notes.delete"))}">✕</button>
       </div>
       <div class="note-text">"${escapeHtml(note.text)}"</div>
       <div class="note-actions">
@@ -1912,7 +2034,7 @@ function renderNotes(notes, filteredVideoId) {
               <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
               <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
             </svg>
-            <span class="note-action-label">Text</span>
+            <span class="note-action-label">${escapeHtml(t("notes.copyText"))}</span>
           </button>
           <span class="action-feedback note-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
         </div>
@@ -1922,7 +2044,7 @@ function renderNotes(notes, filteredVideoId) {
               <path d="M10 13a5 5 0 0 0 7.07.07l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
               <path d="M14 11a5 5 0 0 0-7.07-.07l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
-            <span class="note-action-label">Timestamp</span>
+            <span class="note-action-label">${escapeHtml(t("notes.copyTimestamp"))}</span>
           </button>
           <span class="action-feedback note-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
         </div>
@@ -1931,7 +2053,7 @@ function renderNotes(notes, filteredVideoId) {
             <svg class="lucide lucide-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
-            <span class="note-action-label">Play</span>
+            <span class="note-action-label">${escapeHtml(t("notes.play"))}</span>
           </button>
         </div>
       </div>
@@ -1953,8 +2075,8 @@ function renderNotes(notes, filteredVideoId) {
         setNoteDeleteFeedback(noteEl, button, {
           state: "pending",
           label: "…",
-          message: "Removing note…",
-          ariaLabel: "Removing note",
+          message: t("notes.removing"),
+          ariaLabel: t("notes.removingAria"),
         });
 
         const result = await deleteNote(note.id);
@@ -1969,11 +2091,13 @@ function renderNotes(notes, filteredVideoId) {
 
         setNoteDeleteFeedback(noteEl, button, {
           state: "error",
-          label: "Retry",
+          label: t("notes.retryDelete"),
           message: result?.error
-            ? `Could not delete this note: ${result.error}`
-            : "Could not delete this note. Retry.",
-          ariaLabel: "Retry deleting note",
+            ? t("notes.deleteFailedWithError", {
+                error: localizeServiceError(result.error),
+              })
+            : t("notes.deleteFailed"),
+          ariaLabel: t("notes.retryDeletingAria"),
         });
       });
 
@@ -1985,28 +2109,27 @@ function renderNotes(notes, filteredVideoId) {
         if (btn.disabled) return;
         setLocalActionFeedback(btn, {
           state: "pending",
-          label: "Copying…",
-          message: "Copying note text…",
-          ariaLabel: "Copying note text",
+          label: t("notes.copying"),
+          message: t("notes.copyingText"),
+          ariaLabel: t("notes.copyingText"),
         });
         try {
           await navigator.clipboard.writeText(note.text);
           if (!btn.isConnected) return;
           setLocalActionFeedback(btn, {
             state: "success",
-            label: "✓ Copied",
-            message: "Note text copied.",
-            ariaLabel: "Note text copied",
+            label: `✓ ${t("notes.copied")}`,
+            message: t("notes.textCopied"),
+            ariaLabel: t("notes.textCopiedAria"),
           });
         } catch (err) {
           console.error("Copy failed:", err);
           if (!btn.isConnected) return;
           setLocalActionFeedback(btn, {
             state: "error",
-            label: "Retry copy",
-            message:
-              "Could not copy the note text. Select the note text to copy it manually, or try again.",
-            ariaLabel: "Retry copying note text",
+            label: t("notes.retryCopy"),
+            message: t("notes.copyTextFailed"),
+            ariaLabel: t("notes.retryCopyText"),
           });
         }
       });
@@ -2019,28 +2142,28 @@ function renderNotes(notes, filteredVideoId) {
         if (btn.disabled) return;
         setLocalActionFeedback(btn, {
           state: "pending",
-          label: "Copying…",
-          message: "Copying timestamp link…",
-          ariaLabel: "Copying timestamp link",
+          label: t("notes.copying"),
+          message: t("notes.copyingTimestamp"),
+          ariaLabel: t("notes.copyingTimestamp"),
         });
         try {
           await navigator.clipboard.writeText(note.timestampedUrl);
           if (!btn.isConnected) return;
           setLocalActionFeedback(btn, {
             state: "success",
-            label: "✓ Copied",
-            message: "Timestamp link copied.",
-            ariaLabel: "Timestamp link copied",
+            label: `✓ ${t("notes.copied")}`,
+            message: t("notes.timestampCopied"),
+            ariaLabel: t("notes.timestampCopiedAria"),
           });
         } catch (err) {
           console.error("Copy failed:", err);
           if (!btn.isConnected) return;
           setLocalActionFeedback(btn, {
             state: "error",
-            label: "Retry copy",
-            message: "Could not copy the timestamp link. Select the link below to copy it manually, or try again.",
+            label: t("notes.retryCopy"),
+            message: t("notes.copyTimestampFailed"),
             manualCopyText: note.timestampedUrl,
-            ariaLabel: "Retry copying timestamp link",
+            ariaLabel: t("notes.retryCopyTimestamp"),
           });
         }
       });
@@ -2108,22 +2231,21 @@ function setFollowPlaybackState(state) {
   button.style.display = visibleState === "paused" ? "inline-flex" : "none";
 
   if (visibleState === "paused") {
-    button.setAttribute("aria-label", "Resume following playback");
-    button.title = "Resume following playback";
-    status.textContent =
-      "Following playback is paused. Activate Follow playback to resume.";
+    button.setAttribute("aria-label", t("follow.resume"));
+    button.title = t("follow.resume");
+    status.textContent = t("follow.paused");
     return;
   }
 
   if (state === "following") {
-    button.setAttribute("aria-label", "Follow playback");
-    button.title = "Follow playback";
-    status.textContent = "Following playback.";
+    button.setAttribute("aria-label", t("follow.follow"));
+    button.title = t("follow.follow");
+    status.textContent = t("follow.following");
     return;
   }
 
-  button.setAttribute("aria-label", "Follow playback");
-  button.title = "Follow playback";
+  button.setAttribute("aria-label", t("follow.follow"));
+  button.title = t("follow.follow");
   status.textContent = "";
 }
 
@@ -2139,7 +2261,9 @@ function setPlaybackEntryState(entry, isCurrent) {
     if (timestampButton) {
       timestampButton.setAttribute(
         "aria-label",
-        `Currently playing from ${timestampButton.textContent}. Activate to play from this timestamp.`,
+        t("transcript.currentlyPlaying", {
+          timestamp: timestampButton.textContent,
+        }),
       );
     }
     return;
@@ -2150,7 +2274,7 @@ function setPlaybackEntryState(entry, isCurrent) {
   if (timestampButton) {
     timestampButton.setAttribute(
       "aria-label",
-      `Play from ${timestampButton.textContent}`,
+      t("transcript.playFrom", { timestamp: timestampButton.textContent }),
     );
   }
 }
@@ -2363,8 +2487,8 @@ function recordScrollbarScrollIntent(event) {
 function getOriginalTranscriptLabel() {
   const language = String(currentTranscriptLanguage || "").trim();
   return /^[A-Za-z0-9-]{1,20}$/.test(language)
-    ? `Original (${language})`
-    : "Original";
+    ? t("transcript.originalWithLanguage", { language })
+    : t("transcript.modeOriginal");
 }
 
 function getActiveTranscriptSegments() {
@@ -2419,9 +2543,13 @@ function renderTranscriptSegmentContent(segment, mode, translated, error) {
   if (translated) {
     translationHtml = renderSubtitleInlineMarkup(translated);
   } else if (error) {
-    translationHtml = `${escapeHtml(error)}<button class="translation-retry-btn" type="button">Retry</button>`;
+    const errorKey =
+      error === "Translation unavailable."
+        ? "transcript.unavailable"
+        : "transcript.failed";
+    translationHtml = `<span class="translation-error-message" data-i18n-error="${errorKey}">${escapeHtml(t(errorKey))}</span><button class="translation-retry-btn" type="button">${escapeHtml(t("transcript.retry"))}</button>`;
   } else {
-    translationHtml = "Waiting for translation…";
+    translationHtml = t("transcript.waiting");
   }
 
   const translationState = translated ? "complete" : error ? "error" : "pending";
@@ -2437,18 +2565,7 @@ function renderTranscriptModeRows(segments, mode) {
   if (!transcriptList) return [];
   transcriptList.innerHTML = "";
 
-  const existingBadge = document.getElementById("transcriptSourceBadge");
-  if (existingBadge) existingBadge.remove();
-  const badge = document.createElement("div");
-  badge.id = "transcriptSourceBadge";
-  badge.className = "transcript-source-badge";
-  const originalLabel = getOriginalTranscriptLabel();
-  const modeLabel =
-    mode === "bilingual"
-      ? `${originalLabel} + 简体中文`
-      : `简体中文 · translated from ${originalLabel}`;
-  badge.innerHTML = `<span class="source-dot source-dot--subs"></span> From video subtitles · ${modeLabel}`;
-  transcriptList.parentElement.insertBefore(badge, transcriptList);
+  renderTranscriptSourceBadge(mode, transcriptList);
 
   const rows = [];
   segments.forEach((segment, index) => {
@@ -2466,7 +2583,7 @@ function renderTranscriptModeRows(segments, mode) {
     const seconds = Math.floor(segment.start % 60);
     const timestamp = `${minutes}:${String(seconds).padStart(2, "0")}`;
     div.innerHTML = `
-      <button class="transcript-time" type="button" aria-label="Play from ${timestamp}">${timestamp}</button>
+      <button class="transcript-time" type="button" aria-label="${escapeHtml(t("transcript.playFrom", { timestamp }))}">${timestamp}</button>
       ${renderTranscriptSegmentContent(segment, mode, cached, "")}
     `;
     div.addEventListener("click", (event) =>
@@ -2744,7 +2861,7 @@ function retryTranslationSegment(index, generation) {
     const translation = row.querySelector(".transcript-translation");
     if (translation) {
       translation.className = "transcript-translation translation-pending";
-      translation.textContent = "Retrying…";
+      translation.textContent = t("transcript.retrying");
     }
   }
   activeTranslationQueue.enqueue(index, true);

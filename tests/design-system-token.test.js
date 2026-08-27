@@ -90,8 +90,8 @@ test("DS-01 exposes semantic state, focus, reduced-motion, and non-color samples
   );
   assert.match(surfaces.host, /background = "var\(--sys-state-success-foreground\)"/);
   assert.match(surfaces.host, /background = "var\(--sys-state-error-foreground\)"/);
-  assert.match(surfaces.host, /📝 Note saved/);
-  assert.match(surfaces.host, /✓ Link copied/);
+  assert.match(surfaces.host, /📝 \$\{escapeHtmlForContent\(t\("host\.noteSaved"\)\)\}/);
+  assert.match(surfaces.host, /✓ \$\{t\("host\.linkCopied"\)\}/);
 
   for (const source of Object.values(surfaces)) {
     assert.match(

@@ -149,7 +149,7 @@ test("release copy documents current scope without em dashes", () => {
   assert.match(optionsStyles, /\.customization-summary:focus-visible\s*\{/);
   assert.match(optionsStyles, /\.data-card\s*\{[^}]*margin-top:\s*36px;/);
   assert.match(optionsScript, /clipboard\.writeText/);
-  assert.match(optionsScript, /Edited prompt copied\./);
+  assert.match(optionsScript, /setStatus\(copyStatus, "promptCopied"\)/);
   assert.match(optionsScript, /migration\.migrated[\s\S]*storage\.set/);
 
   const customizationPrompt = `Customize this local YouTube Digest workspace to use [PROVIDER] with [MODEL]. Work only in the current workspace. Before editing, verify that it contains manifest.json and that the manifest name is YouTube Digest. If verification fails, stop and ask me to open the extracted YouTube Digest project folder in my coding agent. Do not search other folders, edit a guessed copy, assume an installation path, or claim Chrome can reveal the absolute OS source path. Update the provider's API endpoint, request format, and minimum Chrome host permissions. Preserve bring-your-own-key and local Chrome storage. Never put API keys in source code, commits, logs, screenshots, this prompt, or chat; after the code is ready, tell me where to enter the key myself. Keep DeepSeek-only request fields and retry behavior isolated to DeepSeek. Handle provider-specific rules separately so one provider does not affect another. Update README.md, README.zh-CN.md, PRIVACY.md, SECURITY.md, and tests. Run npm test, npm run check, and npm run package. Then explain how to reload the unpacked extension and test it on a real YouTube video.`;
@@ -192,11 +192,11 @@ test("notes filters preserve selected contrast and expose pressed state", () => 
 
   assert.match(
     html,
-    /id="notesFilterThis"[\s\S]*?aria-pressed="true"[\s\S]*?>[\s\S]*?This Video/,
+    /id="notesFilterThis"[\s\S]*?aria-pressed="true"[\s\S]*?data-i18n="notes\.thisVideo"/,
   );
   assert.match(
     html,
-    /id="notesFilterAll"[\s\S]*?aria-pressed="false"[\s\S]*?>[\s\S]*?All Notes/,
+    /id="notesFilterAll"[\s\S]*?aria-pressed="false"[\s\S]*?data-i18n="notes\.all"/,
   );
   assert.match(
     html,

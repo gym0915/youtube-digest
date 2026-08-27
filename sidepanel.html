@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>YouTube Digest</title>
+    <title data-i18n="sidepanel.pageTitle"></title>
     <link rel="stylesheet" href="segmented-control.css" />
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
@@ -22,8 +22,8 @@
           class="settings-btn"
           id="settingsBtn"
           type="button"
-          title="Open YouTube Digest settings"
-          aria-label="Open YouTube Digest settings"
+          data-i18n-title="sidepanel.openSettings"
+          data-i18n-aria-label="sidepanel.openSettings"
         >
           <svg class="lucide lucide-settings" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -37,7 +37,7 @@
         class="tabs"
         id="tabsNav"
         role="tablist"
-        aria-label="Digest views"
+        data-i18n-aria-label="sidepanel.tabsLabel"
         style="display: none"
       >
         <button
@@ -49,7 +49,8 @@
           aria-controls="panelTranscript"
           aria-selected="true"
           tabindex="0"
-        >Transcript</button>
+        data-i18n="sidepanel.tabTranscript"
+        ></button>
         <button
           class="tab"
           data-tab="overview"
@@ -59,7 +60,8 @@
           aria-controls="panelOverview"
           aria-selected="false"
           tabindex="-1"
-        >Overview</button>
+        data-i18n="sidepanel.tabOverview"
+        ></button>
         <button
           class="tab"
           data-tab="notes"
@@ -69,7 +71,8 @@
           aria-controls="panelNotes"
           aria-selected="false"
           tabindex="-1"
-        >Notes</button>
+        data-i18n="sidepanel.tabNotes"
+        ></button>
       </div>
 
       <!-- Transcript controls live in the fixed header so they remain visibly
@@ -77,39 +80,42 @@
       <div
         class="transcript-toolbar"
         id="transcriptToolbar"
-        aria-label="Transcript controls"
+        data-i18n-aria-label="sidepanel.transcriptControls"
         hidden
       >
         <div
           class="transcript-mode-control"
           id="transcriptModeControl"
           role="group"
-          aria-label="Transcript language"
+          data-i18n-aria-label="sidepanel.transcriptLanguage"
         >
           <button
             class="transcript-mode-btn active"
             type="button"
             data-transcript-mode="original"
             aria-pressed="true"
-          >Original</button>
+          data-i18n="transcript.modeOriginal"
+          ></button>
           <button
             class="transcript-mode-btn"
             type="button"
             data-transcript-mode="zh"
             aria-pressed="false"
-          >中文</button>
+          data-i18n="transcript.modeChinese"
+          ></button>
           <button
             class="transcript-mode-btn"
             type="button"
             data-transcript-mode="bilingual"
             aria-pressed="false"
-          >双语</button>
+          data-i18n="transcript.modeBilingual"
+          ></button>
           <span
             class="translation-spinner"
             id="langSpinner"
             role="status"
             aria-live="polite"
-            aria-label="Translation in progress"
+            data-i18n-aria-label="sidepanel.translationInProgress"
           ></span>
         </div>
         <div class="transcript-actions">
@@ -117,8 +123,8 @@
             class="transcript-action-btn"
             id="copyTranscriptBtn"
             type="button"
-            title="Copy transcript"
-            aria-label="Copy transcript"
+            data-i18n-title="sidepanel.copyTranscript"
+            data-i18n-aria-label="sidepanel.copyTranscript"
           >
             <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
@@ -129,8 +135,8 @@
             class="transcript-action-btn"
             id="exportTranscriptBtn"
             type="button"
-            title="Export transcript"
-            aria-label="Export transcript"
+            data-i18n-title="sidepanel.exportTranscript"
+            data-i18n-aria-label="sidepanel.exportTranscript"
           >
             <svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -147,11 +153,8 @@
       <!-- WELCOME STATE -->
       <div id="welcomeState" class="welcome-container">
         <div class="welcome-icon">&#9655;</div>
-        <div class="welcome-title">Ready to Digest</div>
-        <div class="welcome-desc">
-          Navigate to a YouTube video and click the extension icon to get an
-          AI-powered digest.
-        </div>
+        <div class="welcome-title" data-i18n="sidepanel.welcomeTitle"></div>
+        <div class="welcome-desc" data-i18n="sidepanel.welcomeDescription"></div>
       </div>
 
       <!-- LOADING STATE -->
@@ -165,10 +168,8 @@
       >
         <div class="loading-container">
           <div class="loading-bar"></div>
-          <div class="loading-text" id="loadingText">Fetching transcript</div>
-          <div class="loading-subtext" id="loadingSubtext">
-            Extracting captions from video...
-          </div>
+          <div class="loading-text" id="loadingText" data-i18n="sidepanel.loadingTranscript"></div>
+          <div class="loading-subtext" id="loadingSubtext" data-i18n="sidepanel.loadingCaptions"></div>
         </div>
       </div>
 
@@ -181,11 +182,9 @@
       >
         <div class="error-container">
           <div class="error-icon">&#9888;</div>
-          <div class="error-title" id="errorTitle">Error</div>
-          <div class="error-message" id="errorMessage">
-            Something went wrong.
-          </div>
-          <button class="error-btn" id="errorBtn">Try Again</button>
+          <div class="error-title" id="errorTitle" data-i18n="sidepanel.errorTitle"></div>
+          <div class="error-message" id="errorMessage" data-i18n="sidepanel.errorMessage"></div>
+          <button class="error-btn" id="errorBtn" data-i18n="sidepanel.retry"></button>
         </div>
       </div>
 
@@ -225,20 +224,20 @@
           >
             <span class="overview-status-icon" aria-hidden="true">○</span>
             <div>
-              <strong id="overviewStatusTitle">Overview is ready when you open this tab.</strong>
-              <p id="overviewStatusMessage">Chapters and key quotes load only after you select Overview.</p>
+              <strong id="overviewStatusTitle" data-i18n="overview.readyTitle"></strong>
+              <p id="overviewStatusMessage" data-i18n="overview.readyMessage"></p>
             </div>
           </div>
           <!-- Chapters -->
           <div class="section">
             <div class="overview-section-heading">
-              <div class="section-title">Chapters</div>
+              <div class="section-title" data-i18n="overview.chapters"></div>
               <span
                 class="overview-loading-spinner"
                 id="chaptersLoadingIndicator"
                 role="status"
                 aria-live="polite"
-                aria-label="Loading chapters"
+                data-i18n-aria-label="overview.loadingChapters"
                 hidden
               ></span>
             </div>
@@ -251,7 +250,7 @@
                   border-color: var(--border);
                 "
               >
-                Chapters will appear here
+                <span data-i18n="overview.chaptersPlaceholder"></span>
               </li>
             </ul>
           </div>
@@ -259,13 +258,13 @@
           <!-- Key Quotes -->
           <div class="section">
             <div class="overview-section-heading">
-              <div class="section-title">Key Quotes</div>
+              <div class="section-title" data-i18n="overview.keyQuotes"></div>
               <span
                 class="overview-loading-spinner"
                 id="quotesLoadingIndicator"
                 role="status"
                 aria-live="polite"
-                aria-label="Loading quotes"
+                data-i18n-aria-label="overview.loadingQuotes"
                 hidden
               ></span>
             </div>
@@ -279,7 +278,7 @@
                 "
               >
                 <div class="quote-text" style="font-style: normal">
-                  Quotes will be extracted when you view this tab...
+                  <span data-i18n="overview.quotesPlaceholder"></span>
                 </div>
               </div>
             </div>
@@ -297,11 +296,11 @@
         >
           <div class="section">
             <div class="section-header">
-              <div class="section-title">Saved Notes</div>
+              <div class="section-title" data-i18n="notes.savedTitle"></div>
               <div
                 class="segmented-control notes-filter"
                 role="group"
-                aria-label="Saved notes filter"
+                data-i18n-aria-label="notes.filterLabel"
                 data-segmented-control
               >
                 <button
@@ -311,7 +310,7 @@
                   aria-pressed="true"
                   data-segmented-value="this-video"
                 >
-                  This Video
+                  <span data-i18n="notes.thisVideo"></span>
                 </button>
                 <button
                   class="segmented-control__option"
@@ -320,7 +319,7 @@
                   aria-pressed="false"
                   data-segmented-value="all-notes"
                 >
-                  All Notes
+                  <span data-i18n="notes.all"></span>
                 </button>
               </div>
             </div>
@@ -331,7 +330,7 @@
               aria-live="polite"
               aria-atomic="true"
             >
-              Move your mouse over the video and click the
+              <span data-i18n="notes.introBefore"></span>
               <svg
                 class="lucide lucide-notebook-pen notes-intro-icon"
                 viewBox="0 0 24 24"
@@ -347,9 +346,7 @@
                 <path d="M14 14.5 12 17l2.5-2" />
                 <path d="m18.5 7.5-4.1 4.1a2.12 2.12 0 0 0-.5.8l-.7 2.2 2.2-.7a2.12 2.12 0 0 0 .8-.5l4.1-4.1a1.5 1.5 0 0 0-2.1-2.1Z" />
               </svg>
-              Note button to
-              save timestamped notes, or press the "n" key while the video is
-              focused.
+              <span data-i18n="notes.introAfter"></span>
             </p>
             <div id="notesList"></div>
           </div>
@@ -362,8 +359,8 @@
       class="follow-playback-btn"
       id="followPlaybackBtn"
       type="button"
-      aria-label="Resume following playback"
-      title="Resume following playback"
+      data-i18n-aria-label="follow.resume"
+      data-i18n-title="follow.resume"
       style="display: none"
     >
       <svg class="lucide lucide-locate-fixed" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -380,6 +377,7 @@
       aria-atomic="true"
     ></p>
 
+    <script src="i18n.js"></script>
     <script src="settings.js"></script>
     <script src="segmented-control.js"></script>
     <script src="sidepanel.js"></script>

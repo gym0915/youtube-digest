@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const i18n = require("../i18n.js");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "content.js"), "utf8");
@@ -212,6 +213,7 @@ function createHarness({ sendMessage } = {}) {
     },
     console: { error() {}, log() {} },
     document,
+    YTD_I18N: i18n,
     navigator: { clipboard: { writeText: async () => {} } },
     setInterval() {
       return nextTimerId++;

@@ -52,13 +52,14 @@ test("DS-12 keeps English, Simplified Chinese, bilingual text, and long content 
   assert.match(settings.css, /\.settings-field \.help,[\s\S]*\.status-message\s*\{[^}]*overflow-wrap:\s*anywhere;/);
   assert.doesNotMatch(`${sidePanel.css}\n${settings.css}`, /word-break:\s*break-all/i);
 
-  assert.match(host, /<span class="ytd-digest-label">Digest<\/span>/);
+  assert.match(host, /<span class="ytd-digest-label"><\/span>/);
+  assert.match(host, /label\.textContent = t\("host\.digest"\)/);
   assert.match(host, /white-space:\s*nowrap;/);
   assert.match(host, /width: min\(350px, calc\(100vw - 24px\)\)/);
 });
 
 test("DS-13 keeps keyboard, focus, semantic state, and live feedback available on every surface", () => {
-  assert.match(sidePanel.html, /role="tablist"[\s\S]*aria-label="Digest views"/);
+  assert.match(sidePanel.html, /role="tablist"[\s\S]*data-i18n-aria-label="sidepanel\.tabsLabel"/);
   assert.match(sidePanel.html, /role="tabpanel"[\s\S]*aria-labelledby="tabTranscript"/);
   assert.match(sidePanel.js, /function handleTabKeydown\(event\)[\s\S]*ArrowRight[\s\S]*ArrowLeft[\s\S]*Home[\s\S]*End/);
   assert.match(sidePanel.js, /switchTab\(nextTab\.dataset\.tab\);[\s\S]*nextTab\.focus\(\);/);
@@ -69,7 +70,7 @@ test("DS-13 keeps keyboard, focus, semantic state, and live feedback available o
   assert.match(settings.html, /id="saveStatus"[\s\S]*role="status"[\s\S]*aria-live="polite"/);
   assert.match(settings.js, /button\.disabled = isPending;[\s\S]*button\.setAttribute\("aria-busy", String\(isPending\)\);/);
 
-  assert.match(host, /setAttribute\("aria-label", "Open YouTube Digest"\)/);
+  assert.match(host, /setAttribute\("aria-label", t\("host\.open"\)\)/);
   assert.match(host, /setAttribute\("aria-live", "polite"\);[\s\S]*setAttribute\("aria-hidden", "true"\);/);
   assert.match(host, /copy-status[\s\S]*role="status" aria-live="polite"/i);
   assert.match(host, /noteButton\.tabIndex = isVisible && !isSaving \? 0 : -1;/);
@@ -121,8 +122,8 @@ test("DS-14 keeps state channels distinct, non-colour feedback explicit, and mot
   }
   assert.match(settings.css, /\.status-message\[data-state="success"\][\s\S]*content:\s*"✓"/);
   assert.match(settings.css, /\.status-message\[data-state="error"\][\s\S]*content:\s*"!"/);
-  assert.match(host, /<span aria-hidden="true">✓<\/span><span>Saved<\/span>/);
-  assert.match(host, /<span aria-hidden="true">!<\/span><span>Could not save note\. Try again\.<\/span>/);
+  assert.match(host, /<span aria-hidden="true">✓<\/span><span>\$\{escapeHtmlForContent\(t\("host\.saved"\)\)\}<\/span>/);
+  assert.match(host, /<span aria-hidden="true">!<\/span><span>\$\{escapeHtmlForContent\(t\("host\.noteSaveFailed"\)\)\}<\/span>/);
 
   const contrast = (foreground, background) => {
     const luminance = (hex) => {
@@ -168,8 +169,8 @@ test("DS-15 preserves the established asynchronous and host responsibilities ins
   assert.match(transcriptCopy, /await copyToClipboard\(text\)/);
   assert.match(transcriptCopy, /btn\.dataset\.feedbackState = "success"/);
   assert.match(transcriptCopy, /btn\.dataset\.feedbackState = "error"/);
-  assert.match(transcriptCopy, /btn\.setAttribute\("aria-label", "Transcript copied"\)/);
-  assert.match(transcriptCopy, /btn\.setAttribute\("aria-label", "Retry copying transcript"\)/);
+  assert.match(transcriptCopy, /btn\.setAttribute\("aria-label", t\("sidepanel\.transcriptCopied"\)\)/);
+  assert.match(transcriptCopy, /btn\.setAttribute\("aria-label", t\("sidepanel\.retryCopyTranscript"\)\)/);
   assert.doesNotMatch(transcriptCopy, /setTimeout\s*\(/);
   assert.doesNotMatch(functionSource(sidePanel.js, "triggerAnalysis", "seekTo"), /setTimeout\s*\(/);
   assert.match(host, /function scheduleNoteButtonStateReset[\s\S]*}, 2000\);/);

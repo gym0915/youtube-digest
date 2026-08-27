@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const i18n = require("../i18n.js");
 
 const contentScript = fs.readFileSync(
   path.resolve(__dirname, "..", "content.js"),
@@ -158,6 +159,7 @@ function createHarness() {
         },
       },
     },
+    YTD_I18N: i18n,
     MutationObserver: class {
       constructor(callback) {
         this.callback = callback;

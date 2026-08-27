@@ -17,6 +17,9 @@ const DEBUG = false;
 const debugLog = (...args) => {
   if (DEBUG) console.log(...args);
 };
+const I18N = YTD_I18N;
+let currentUiLanguage = I18N.DEFAULT_LANGUAGE;
+const t = (key, params) => I18N.translate(currentUiLanguage, key, params);
 
 // ============================================================
 // GLOBAL STATE
@@ -35,6 +38,7 @@ let digestButtonResizeListenerAdded = false;
 // A navigation invalidates every pending host-page response for the old video.
 // This only guards visual writes; it does not change the existing save request.
 let hostPageLifecycleEpoch = 0;
+let visibleNoteToast = null;
 
 // The host page cannot consume an extension stylesheet without changing the
 // manifest. Keep its Token scope attached only to our existing injected UI.
@@ -239,6 +243,26 @@ function init() {
   setupDigestButtonResizeListener();
 }
 
+async function initializeUiLanguage() {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: "getUiLanguage" });
+    if (result?.success) {
+      currentUiLanguage = I18N.normalizeLanguage(result.language);
+    }
+  } catch (error) {
+    currentUiLanguage = I18N.DEFAULT_LANGUAGE;
+  }
+  refreshHostUiCopy();
+}
+
+function refreshHostUiCopy() {
+  updateDigestButtonCopy(ytdDigestButton);
+  if (ytdNoteButton?.isConnected) {
+    setNoteButtonState(ytdNoteButton, ytdNoteButton.dataset.noteState || "idle");
+  }
+  if (visibleNoteToast?.isConnected) showNoteSavedToast(visibleNoteToast.note);
+}
+
 /**
  * Attempts to inject the note button. If the player container isn't ready yet,
  * retry a few times with a short delay. YouTube renders the player asynchronously
@@ -290,9 +314,11 @@ function tryInjectNoteButton() {
 
 // Run init when DOM is ready
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => {
+    initializeUiLanguage().finally(init);
+  });
 } else {
-  init();
+  initializeUiLanguage().finally(init);
 }
 
 // ============================================================
@@ -342,6 +368,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "showNoteSavedFeedback") {
     // Show brief feedback that note was saved
     showNoteSavedToast(message.note);
+    sendResponse({ success: true });
+    return false;
+  }
+
+  if (message.action === "uiLanguageChanged") {
+    currentUiLanguage = I18N.normalizeLanguage(message.language);
+    refreshHostUiCopy();
     sendResponse({ success: true });
     return false;
   }
@@ -415,11 +448,11 @@ function createDigestButton() {
   const digestButton = document.createElement("button");
   digestButton.id = "ytd-digest-button";
   digestButton.type = "button";
-  digestButton.setAttribute("aria-label", "Open YouTube Digest");
   digestButton.innerHTML = `
     <span class="ytd-digest-icon" style="font-size: var(--sys-icon-size);">▶</span>
-    <span class="ytd-digest-label">Digest</span>
+    <span class="ytd-digest-label"></span>
   `;
+  updateDigestButtonCopy(digestButton);
 
   // The host keeps its native placement; only its visual contract is tokenized.
   digestButton.style.cssText = `
@@ -476,6 +509,13 @@ function createDigestButton() {
 
   ytdDigestButton = digestButton;
   return digestButton;
+}
+
+function updateDigestButtonCopy(button) {
+  if (!button || (!button.isConnected && button !== ytdDigestButton)) return;
+  button.setAttribute("aria-label", t("host.open"));
+  const label = button.querySelector?.(".ytd-digest-label");
+  if (label) label.textContent = t("host.digest");
 }
 
 /**
@@ -714,15 +754,15 @@ function hideNoteButton() {
 
 function getNoteButtonMarkup(state) {
   if (state === "saving") {
-    return '<span>Saving</span>';
+    return `<span>${escapeHtmlForContent(t("host.saving"))}</span>`;
   }
 
   if (state === "saved") {
-    return '<span aria-hidden="true">✓</span><span>Saved</span>';
+    return `<span aria-hidden="true">✓</span><span>${escapeHtmlForContent(t("host.saved"))}</span>`;
   }
 
   if (state === "error") {
-    return '<span aria-hidden="true">!</span><span>Could not save note. Try again.</span>';
+    return `<span aria-hidden="true">!</span><span>${escapeHtmlForContent(t("host.noteSaveFailed"))}</span>`;
   }
 
   return `
@@ -730,7 +770,7 @@ function getNoteButtonMarkup(state) {
       <path d="M12 20h9"></path>
       <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
     </svg>
-    <span>Note</span>
+    <span>${escapeHtmlForContent(t("host.note"))}</span>
   `;
 }
 
@@ -743,10 +783,10 @@ function updateNoteButtonInteractivity(noteButton) {
 
 function setNoteButtonState(noteButton, state) {
   const labels = {
-    idle: "Save a note at the current time",
-    saving: "Saving",
-    saved: "Note saved",
-    error: "Could not save note. Try again.",
+    idle: t("host.saveNote"),
+    saving: t("host.saving"),
+    saved: t("host.noteSaved"),
+    error: t("host.noteSaveFailed"),
   };
 
   noteButton.dataset.noteState = state;
@@ -909,15 +949,16 @@ function showNoteSavedToast(note) {
   ytdNoteToastDismissTimer = null;
 
   const toast = document.createElement("div");
+  toast.note = note;
   toast.id = "ytd-note-toast";
   toast.setAttribute("aria-live", "polite");
   toast.setAttribute("aria-atomic", "true");
   toast.innerHTML = `
-    <div style="font: var(--sys-type-label); margin-bottom: var(--sys-layout-inline-gap); color: var(--sys-state-success-foreground);">📝 Note saved</div>
+    <div style="font: var(--sys-type-label); margin-bottom: var(--sys-layout-inline-gap); color: var(--sys-state-success-foreground);">📝 ${escapeHtmlForContent(t("host.noteSaved"))}</div>
     <div style="font: var(--sys-type-meta); color: var(--sys-text-secondary); margin-bottom: var(--sys-layout-inline-gap);">${escapeHtmlForContent(note.timestamp)} — ${escapeHtmlForContent(note.videoTitle)}</div>
     <div style="font: var(--sys-type-body); color: var(--sys-text-primary);">"${escapeHtmlForContent(note.text)}"</div>
     <div style="margin-top: var(--sys-layout-control-gap); font: var(--sys-type-meta);">
-      <a class="ytd-note-toast-copy" href="${escapeHtmlForContent(note.timestampedUrl)}" aria-label="Copy note link" style="color: var(--sys-action-primary-bg); font-weight: 600; text-decoration: none;">🔗 Copy link</a>
+      <a class="ytd-note-toast-copy" href="${escapeHtmlForContent(note.timestampedUrl)}" aria-label="${escapeHtmlForContent(t("host.copyNoteLink"))}" style="color: var(--sys-action-primary-bg); font-weight: 600; text-decoration: none;">🔗 ${escapeHtmlForContent(t("host.copyLink"))}</a>
       <span class="ytd-note-toast-copy-status" role="status" aria-live="polite" aria-atomic="true" style="display: block; margin-top: var(--sys-layout-inline-gap);"></span>
     </div>
   `;
@@ -949,21 +990,20 @@ function showNoteSavedToast(note) {
     if (isCopying) return;
 
     isCopying = true;
-    copyLink.textContent = "Copying link…";
+    copyLink.textContent = t("host.copyingNoteLink");
     copyLink.setAttribute("aria-disabled", "true");
     copyLink.style.pointerEvents = "none";
-    copyStatus.textContent = "Copying note link.";
+    copyStatus.textContent = t("host.copyingNoteLink");
 
     try {
       await navigator.clipboard.writeText(note.timestampedUrl);
-      copyLink.textContent = "✓ Link copied";
-      copyLink.setAttribute("aria-label", "Copy note link again");
-      copyStatus.textContent = "Note link copied.";
+      copyLink.textContent = `✓ ${t("host.linkCopied")}`;
+      copyLink.setAttribute("aria-label", t("host.copyNoteLinkAgain"));
+      copyStatus.textContent = t("host.noteLinkCopied");
     } catch (err) {
-      copyLink.textContent = "! Copy failed — try again";
-      copyLink.setAttribute("aria-label", "Try copying note link again");
-      copyStatus.textContent =
-        "Could not copy the note link. Try again or copy the link address manually.";
+      copyLink.textContent = `! ${t("host.copyFailed")}`;
+      copyLink.setAttribute("aria-label", t("host.retryCopyNoteLink"));
+      copyStatus.textContent = t("host.copyNoteLinkFailed");
       console.error("Copy failed:", err);
     } finally {
       isCopying = false;
@@ -973,6 +1013,7 @@ function showNoteSavedToast(note) {
   });
 
   document.body.appendChild(toast);
+  visibleNoteToast = toast;
 
   // Keep the confirmation visible long enough to read, then remove it so it
   // never blocks the YouTube controls or subsequent page content.
@@ -980,6 +1021,7 @@ function showNoteSavedToast(note) {
     ytdNoteToastDismissTimer = null;
     if (toast.isConnected) {
       toast.remove();
+      if (visibleNoteToast === toast) visibleNoteToast = null;
     }
   }, 5000);
 }

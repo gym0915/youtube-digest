@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const i18n = require("../i18n.js");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "content.js"), "utf8");
@@ -182,6 +183,7 @@ function createHarness({ clipboardWrite, sendMessage } = {}) {
     },
     console: { error() {}, log() {} },
     document,
+    YTD_I18N: i18n,
     navigator: { clipboard: { writeText: clipboardWrite || (async () => {}) } },
     setInterval() {
       return 1;
@@ -227,9 +229,12 @@ test("DS-10 fixes the existing host controls to the approved visual and accessib
   assert.deepEqual(fixture.viewports, ["1280x900", "1024x900"]);
   assert.deepEqual(fixture.hostActions, ["Digest", "Note", "Copy link"]);
   assert.deepEqual(fixture.noteStates, ["hidden", "visible", "saving", "saved", "error"]);
-  assert.match(source, /<span class="ytd-digest-label">Digest<\/span>/);
-  assert.match(source, /<span>Note<\/span>/);
-  assert.match(source, />🔗 Copy link<\/a>/);
+  assert.equal(i18n.translate("en", "host.digest"), "Digest");
+  assert.equal(i18n.translate("en", "host.note"), "Note");
+  assert.equal(i18n.translate("en", "host.copyLink"), "Copy link");
+  assert.match(source, /<span class="ytd-digest-label"><\/span>/);
+  assert.match(source, /<span>\$\{escapeHtmlForContent\(t\("host\.note"\)\)\}<\/span>/);
+  assert.match(source, /🔗 \$\{escapeHtmlForContent\(t\("host\.copyLink"\)\)\}<\/a>/);
   assert.match(source, /#ytd-digest-button:active\s*\{[\s\S]*box-shadow: none/);
   assert.doesNotMatch(functionSource("createDigestButton", "injectDigestButton"), /scale\(/);
   assert.match(source, /#ytd-note-button\[data-note-state="saved"\][\s\S]*--sys-state-success/);
@@ -315,7 +320,7 @@ test("DS-10 binds Note and Toast feedback to controlled save and Clipboard resul
   const failedCopy = failedToast.querySelector(".ytd-note-toast-copy");
   const failedStatus = failedToast.querySelector(".ytd-note-toast-copy-status");
   await failedCopy.listeners.get("click")({ preventDefault() {} });
-  assert.equal(failedCopy.textContent, "! Copy failed — try again");
+  assert.equal(failedCopy.textContent, "! Copy failed - try again");
   assert.match(failedStatus.textContent, /Try again or copy the link address manually/);
 });
 
