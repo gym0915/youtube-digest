@@ -67,7 +67,7 @@ const NOTES_TRANSLATION_STORAGE_KEY = "ytd_note_translations";
 const VIDEO_CACHE_PREFIX = "digest_";
 const VIDEO_CACHE_INDEX_STORAGE_KEY = "ytd_video_cache_index";
 const VIDEO_CACHE_INDEX_VERSION = 1;
-const VIDEO_CACHE_BUDGET_BYTES = 6 * 1024 * 1024;
+const VIDEO_CACHE_BUDGET_BYTES = 8 * 1024 * 1024;
 let notesTranslationCacheLoaded = false;
 let activeContentTranslationSession = null;
 let transcriptCacheWriteChain = Promise.resolve();
@@ -2834,7 +2834,7 @@ function persistContentTranslationEntries(entries) {
  * Saves the current digest results to persistent local storage.
  * Results survive browser restarts — reopening the same video loads from cache
  * without consuming API tokens or Supadata calls. Video records are retained
- * until the shared 6 MiB budget requires least-recently-used eviction.
+ * until the shared 8 MiB budget requires least-recently-used eviction.
  */
 async function saveToCache(videoId) {
   if (!videoId || !currentTranscript) return;

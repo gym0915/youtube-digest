@@ -47,7 +47,7 @@ YouTube Digest uses Chrome's local extension storage, not a YouTube Digest cloud
 - Supadata and DeepSeek settings and API keys remain on the device in Chrome's extension storage.
 - Saved notes remain until you delete them or remove/clear the extension's data. The extension keeps up to 100 notes.
 - Transcript, Overview, and their generated translations are stored locally as
-  video caches. They share a 6 MiB budget and are retained until the budget is
+  video caches. They share an 8 MiB budget and are retained until the budget is
   needed, then the least recently opened complete video cache is removed. The
   cache is not automatically removed because of age. Notes and their
   translations are stored separately and are not removed by clearing video

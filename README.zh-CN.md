@@ -103,8 +103,8 @@ API Key 和设置保存在你设备上的 Chrome 扩展本地存储中。发布�
 - Supadata 能够返回的原生字幕。YouTube Digest 会优先请求英文字幕，也可能显示其他可用的原生语言。
 - Transcript、Overview 和 Notes 的原文、简体中文及双语展示。
 - AI 概览、选中文本讲解、翻译和自动润色笔记。
-- 本地笔记，以及一个 6 MiB、按最近访问淘汰的本地视频缓存，用于保存
-  Transcript、Overview 和已生成的译文。缓存的 Transcript、Overview 和既有译文再次打开时无需重复请求；笔记及其译文独立保留。
+- 本地笔记，以及一个 8 MiB、按最近访问淘汰的本地视频缓存，用于保存
+  Transcript、Overview 和已生成的译文。缓存的 Transcript、Overview 和既有译文再次打开时无需重复请求；笔记及其译文使用剩余的本地存储空间并独立保留。
 - 发布版本的所有 AI 功能都使用 DeepSeek V4 Flash。其他服务需要修改本地代码，不属于发布版本的支持范围。
 
 Shorts、直播、私密视频、受访问限制的视频，以及没有原生字幕的视频可能无法使用。目前没有测试 Firefox、Safari、移动浏览器或其他 Chromium 浏览器。

@@ -103,10 +103,10 @@ Keys and settings are stored in Chrome's local extension storage on your device.
 - Native subtitle tracks returned by Supadata. YouTube Digest prefers English when available, but may show another native language.
 - Original, Simplified Chinese, and aligned bilingual views for Transcript, Overview, and Notes.
 - AI overviews, selected-text explanations, translation, and automatic note polishing.
-- Local notes and a 6 MiB least-recently-used cache for Transcript, Overview,
+- Local notes and an 8 MiB least-recently-used cache for Transcript, Overview,
   and generated translations. Cached Transcript, Overview, and previously
   generated translations reopen without another request; notes and their
-  translations are kept separately.
+  translations use the remaining local storage separately.
 - DeepSeek V4 Flash for all published AI features. Other providers require a local code adaptation and are not supported by this published version.
 
 Shorts, live streams, private or access-restricted videos, and videos without an available native transcript may not work. Firefox, Safari, mobile browsers, and other Chromium browsers are not currently tested or supported.

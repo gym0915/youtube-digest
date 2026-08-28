@@ -505,11 +505,12 @@ test("video cache evicts whole least-recently-used records within its byte budge
       sidepanel.selectVideoCacheEvictions(
         entries,
         "current",
-        3 * 1024 * 1024,
+        5 * 1024 * 1024,
       ),
     ),
     ["oldest"],
   );
+  assert.equal(sidepanel.VIDEO_CACHE_BUDGET_BYTES, 8 * 1024 * 1024);
   assert.equal(
     sidepanel.selectVideoCacheEvictions(
       entries,
