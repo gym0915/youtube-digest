@@ -183,28 +183,37 @@ test("Transcript header exposes and wires Original, Chinese, and bilingual modes
   assert.match(js, /t\("transcript\.originalWithLanguage", \{ language \}\)/);
 });
 
-test("Transcript controls share the fixed header and remain scoped to the Transcript tab", () => {
+test("Switching videos resets the panel to the original transcript", () => {
+  const js = read("sidepanel.js");
+
+  assert.match(
+    js,
+    /function resetContentViewForNewVideo\(\)[\s\S]*currentTranscriptMode = "original";[\s\S]*setTranscriptModeButtons\(currentTranscriptMode\);[\s\S]*switchTab\("transcript"\);/,
+  );
+  assert.match(
+    js,
+    /if \(videoId !== currentVideoId\) \{\s*resetContentViewForNewVideo\(\);/,
+  );
+});
+
+test("Content controls sit below the title and above the global tab navigation", () => {
   const html = read("sidepanel.html");
   const css = read("sidepanel.css");
   const js = read("sidepanel.js");
   const toolbarIndex = html.indexOf('id="transcriptToolbar"');
+  const tabsIndex = html.indexOf('id="tabsNav"');
   const contentIndex = html.indexOf('id="contentArea"');
-  const transcriptPanelStart = html.indexOf('id="panelTranscript"');
-  const overviewPanelStart = html.indexOf('id="panelOverview"');
 
-  assert.ok(toolbarIndex > -1, "expected a dedicated Transcript toolbar");
+  assert.ok(toolbarIndex > -1, "expected a dedicated content toolbar");
   assert.ok(
-    toolbarIndex < contentIndex,
-    "the Transcript toolbar must live in the non-scrolling header",
-  );
-  assert.doesNotMatch(
-    html.slice(transcriptPanelStart, overviewPanelStart),
-    /id="transcriptToolbar"|id="transcriptModeControl"/,
+    toolbarIndex < tabsIndex && tabsIndex < contentIndex,
+    "the content toolbar must sit above the tabs in the non-scrolling header",
   );
   assert.match(
     css,
     /\.transcript-toolbar\s*\{[^}]*display:\s*flex;[^}]*padding:\s*var\(--sys-layout-inline-gap\) 0/,
   );
+  assert.match(css, /\.tabs\s*\{[^}]*margin-top:\s*0;/);
   assert.match(
     css,
     /\.transcript-toolbar\[hidden\]\s*\{[^}]*display:\s*none;/,
@@ -212,15 +221,42 @@ test("Transcript controls share the fixed header and remain scoped to the Transc
   assert.doesNotMatch(css, /\.transcript-section-header\s*\{[^}]*position:\s*sticky;/);
   assert.match(
     js,
-    /function setTranscriptToolbarVisibility\(visible\)[\s\S]*?toolbar\.hidden = !visible;/,
+    /function setContentToolbarVisibility\(visible\)[\s\S]*?toolbar\.hidden = !visible;/,
   );
   assert.match(
     js,
-    /function switchTab\(tabName\)[\s\S]*?setTranscriptToolbarVisibility\(tabName === "transcript"\);/,
+    /function switchTab\(tabName\)[\s\S]*?setContentToolbarVisibility\(true\);/,
   );
   assert.match(
     js,
-    /function showState\(state\)[\s\S]*?state === "results" && activeTab === "transcript"/,
+    /function showState\(state\)[\s\S]*?setContentToolbarVisibility\(state === "results"\);/,
+  );
+});
+
+test("Transcript copy and export actions sit beside the transcript source", () => {
+  const html = read("sidepanel.html");
+  const toolbarStart = html.indexOf('id="transcriptToolbar"');
+  const tabsStart = html.indexOf('id="tabsNav"');
+  const sourceStart = html.indexOf('id="transcriptSourceBadge"');
+  const copyStart = html.indexOf('id="copyTranscriptBtn"');
+  const exportStart = html.indexOf('id="exportTranscriptBtn"');
+
+  assert.ok(
+    toolbarStart < tabsStart && tabsStart < sourceStart,
+    "the transcript source belongs below the global header controls",
+  );
+  assert.ok(
+    sourceStart < copyStart && copyStart < exportStart,
+    "copy and export actions must follow the transcript source in its row",
+  );
+  assert.equal(
+    html.slice(toolbarStart, tabsStart).includes("copyTranscriptBtn"),
+    false,
+    "global language controls must not contain transcript-only actions",
+  );
+  assert.match(
+    html.slice(html.lastIndexOf("transcript-source-row", sourceStart), exportStart),
+    /transcript-source-row[\s\S]*transcript-actions[\s\S]*copyTranscriptBtn/,
   );
 });
 
@@ -329,9 +365,9 @@ test("Chinese and bilingual modes share one target cache and in-flight request",
   );
 
   assert.equal(requests.length, 1);
-  assert.equal(
+  assert.match(
     sidepanel.transcriptTranslationCacheKeyForVideo("video-1", source[0]),
-    "video-1:zh:semantic:segment-0-0",
+    /^video:video-1:zh:transcriptBatch:segment-0-0:[0-9a-f]+:v2$/,
   );
 
   resolveRequest({
@@ -346,18 +382,100 @@ test("Chinese and bilingual modes share one target cache and in-flight request",
   assert.equal(secondResult.text, "\u4e2d\u6587\u8bd1\u6587\u3002");
 });
 
+test("content translation keys isolate surfaces and source revisions", () => {
+  const sidepanel = loadSidepanelHelpers();
+  const transcript = sidepanel.createContentTranslationItem({
+    videoId: "video-1",
+    contentType: "transcriptBatch",
+    id: "segment-0-0",
+    text: "Original sentence.",
+  });
+  const overview = sidepanel.createContentTranslationItem({
+    videoId: "video-1",
+    contentType: "overviewBatch",
+    id: "quote-0-0",
+    text: "Original sentence.",
+  });
+  const revised = sidepanel.createContentTranslationItem({
+    videoId: "video-1",
+    contentType: "overviewBatch",
+    id: "quote-0-0",
+    text: "Revised source sentence.",
+  });
+
+  assert.match(
+    sidepanel.getContentTranslationDescriptor(transcript).key,
+    /^video:video-1:zh:transcriptBatch:segment-0-0:[0-9a-f]+:v2$/,
+  );
+  assert.notEqual(
+    sidepanel.getContentTranslationDescriptor(transcript).key,
+    sidepanel.getContentTranslationDescriptor(overview).key,
+  );
+  assert.notEqual(
+    sidepanel.getContentTranslationDescriptor(overview).key,
+    sidepanel.getContentTranslationDescriptor(revised).key,
+  );
+});
+
+test("content translation renderer keeps bilingual content stacked and avoids duplicate Chinese", () => {
+  const sidepanel = loadSidepanelHelpers();
+  const item = sidepanel.createContentTranslationItem({
+    videoId: "video-1",
+    contentType: "notesBatch",
+    id: "note_1",
+    text: "Original note.",
+  });
+  const chinese = sidepanel.renderContentTranslationMarkup(
+    item,
+    "zh",
+    "\u4e2d\u6587\u7b14\u8bb0\u3002",
+    "",
+  );
+  const bilingual = sidepanel.renderContentTranslationMarkup(
+    item,
+    "bilingual",
+    "\u4e2d\u6587\u7b14\u8bb0\u3002",
+    "",
+  );
+  const alreadyChinese = sidepanel.renderContentTranslationMarkup(
+    { ...item, text: "\u8fd9\u662f\u4e2d\u6587\u3002" },
+    "bilingual",
+    "\u8fd9\u662f\u4e2d\u6587\u3002",
+    "",
+  );
+
+  assert.doesNotMatch(chinese, /Original note/);
+  assert.match(bilingual, /content-original/);
+  assert.match(bilingual, /content-translation/);
+  assert.doesNotMatch(alreadyChinese, /content-translation/);
+});
+
 test("translation cache writes use the captured video instead of the current tab", async () => {
-  const writes = [];
+  const values = new Map([
+    [
+      "digest_old-video",
+      {
+        transcript: [{ start: 0, text: "Original sentence." }],
+        paragraphCache: {},
+        timestamp: 1,
+      },
+    ],
+  ]);
   const sidepanel = loadSidepanelHelpers({
     storageLocal: {
-      get: async (key) => ({
-        [key]: {
-          transcript: [{ start: 0, text: "Original sentence." }],
-          paragraphCache: {},
-          timestamp: 1,
-        },
-      }),
-      set: async (value) => writes.push(value),
+      get: async (key) => {
+        if (key === null) return Object.fromEntries(values);
+        const keys = Array.isArray(key) ? key : [key];
+        return Object.fromEntries(
+          keys.filter((item) => values.has(item)).map((item) => [item, values.get(item)]),
+        );
+      },
+      set: async (items) => {
+        Object.entries(items).forEach(([key, value]) => values.set(key, value));
+      },
+      remove: async (keys) => {
+        (Array.isArray(keys) ? keys : [keys]).forEach((key) => values.delete(key));
+      },
     },
   });
 
@@ -365,13 +483,53 @@ test("translation cache writes use the captured video instead of the current tab
     { key: "old-video:zh:semantic:segment-0-0", text: "\u65e7\u89c6\u9891\u8bd1\u6587" },
   ]);
 
-  assert.equal(writes.length, 1);
   assert.equal(
-    writes[0]["digest_old-video"].paragraphCache[
+    values.get("digest_old-video").paragraphCache[
       "old-video:zh:semantic:segment-0-0"
     ],
     "\u65e7\u89c6\u9891\u8bd1\u6587",
   );
+  assert.ok(values.get("ytd_video_cache_index"));
+});
+
+test("video cache evicts whole least-recently-used records within its byte budget", () => {
+  const sidepanel = loadSidepanelHelpers();
+  const entries = {
+    oldest: { byteSize: 3 * 1024 * 1024, lastAccessedAt: 10 },
+    recent: { byteSize: 2 * 1024 * 1024, lastAccessedAt: 20 },
+    current: { byteSize: 1 * 1024 * 1024, lastAccessedAt: 30 },
+  };
+
+  assert.deepEqual(
+    Array.from(
+      sidepanel.selectVideoCacheEvictions(
+        entries,
+        "current",
+        3 * 1024 * 1024,
+      ),
+    ),
+    ["oldest"],
+  );
+  assert.equal(
+    sidepanel.selectVideoCacheEvictions(
+      entries,
+      "current",
+      sidepanel.VIDEO_CACHE_BUDGET_BYTES + 1,
+    ),
+    null,
+  );
+});
+
+test("legacy video caches migrate their timestamp into LRU metadata without deletion", () => {
+  const sidepanel = loadSidepanelHelpers();
+  const index = sidepanel.buildVideoCacheIndex({
+    digest_legacy: { transcript: [], timestamp: 1234 },
+    ytd_notes: [{ id: "note-1" }],
+  });
+
+  assert.deepEqual(index.entries.legacy.lastAccessedAt, 1234);
+  assert.ok(index.entries.legacy.byteSize > 0);
+  assert.equal(index.entries.notes, undefined);
 });
 
 test("translation scheduling is visible-window only and pauses unsent work off-tab", () => {
@@ -381,6 +539,31 @@ test("translation scheduling is visible-window only and pauses unsent work off-t
   assert.match(js, /if \(!eligible\.has\(index\)\) continue;/);
   assert.match(js, /activeTranslationQueue = \{ enqueue, stop \}/);
   assert.match(js, /stopTranscriptTranslationSession\(\);[\s\S]*stopPlaybackTracking\(\);/);
+});
+
+test("switching from a translated tab to Original refreshes Overview and Notes", () => {
+  const js = read("sidepanel.js");
+  const switchTabSource = js.slice(
+    js.indexOf("function switchTab"),
+    js.indexOf("function renderOverviewStatus"),
+  );
+  const activeSurfaceSource = js.slice(
+    js.indexOf("async function translateActiveContentSurface"),
+    js.indexOf("/**\n * Renders immediately, translates the current visible window"),
+  );
+
+  assert.match(
+    switchTabSource,
+    /if \(tabName !== "transcript"\) \{\s*translateActiveContentSurface\(\);\s*\}/,
+  );
+  assert.match(
+    activeSurfaceSource,
+    /if \(currentTranscriptMode === "original"\)[\s\S]*renderAnalysisResults\(currentAnalysis\)/,
+  );
+  assert.match(
+    activeSurfaceSource,
+    /if \(currentTranscriptMode === "original"\)[\s\S]*renderNotes\(renderedNotes, renderedNotesFilter\)/,
+  );
 });
 
 test("translated-only omits English while bilingual renders aligned English and Chinese", () => {
@@ -453,6 +636,49 @@ test("background rejects unsupported language fallthrough and malformed batches"
       }),
     /unique and stable/,
   );
+});
+
+test("background accepts Overview and Notes translation batches", async () => {
+  const requests = [];
+  const helpers = loadBackgroundHelpers({
+    fetchImpl: async (url, options) => {
+      if (url.startsWith("chrome-extension://")) {
+        return { ok: true, text: async () => read("prompts/translation.md") };
+      }
+      requests.push(JSON.parse(options.body));
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                segments: [{ id: "item-1", text: "\u4e2d\u6587\u7ed3\u679c\u3002" }],
+              }),
+            },
+          }],
+        }),
+      };
+    },
+  });
+
+  const overview = await helpers.handleTranslateContent(
+    { segments: [{ id: "item-1", text: "Overview source." }] },
+    "overviewBatch",
+    "zh",
+    "Video",
+  );
+  const notes = await helpers.handleTranslateContent(
+    { segments: [{ id: "item-1", text: "Note source." }] },
+    "notesBatch",
+    "zh",
+    "Video",
+  );
+
+  assert.equal(overview.success, true);
+  assert.equal(notes.success, true);
+  assert.equal(requests.length, 2);
+  assert.match(requests[0].messages[0].content, /Overview content items/);
+  assert.match(requests[1].messages[0].content, /saved Note content items/);
 });
 
 test("all AI product requests use DeepSeek non-thinking and JSON behavior", async () => {

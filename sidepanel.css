@@ -297,7 +297,7 @@ body {
 .tabs {
   display: flex;
   gap: var(--sys-layout-section-gap);
-  margin-top: 14px;
+  margin-top: 0;
   padding: calc(
       var(--sys-state-focus-ring-width) + var(--sys-state-focus-ring-offset)
     )
@@ -491,8 +491,7 @@ body {
   justify-content: space-between;
   gap: var(--sys-layout-control-gap);
   margin: 0;
-  padding: var(--sys-layout-inline-gap) 0
-    var(--sys-layout-card-padding-compact);
+  padding: var(--sys-layout-inline-gap) 0;
 }
 
 .transcript-toolbar[hidden] {
@@ -891,7 +890,8 @@ body {
   margin-bottom: var(--sys-layout-control-gap);
 }
 
-.quote-text::before {
+.quote-text::before,
+.note-text::before {
   content: "\201C";
   font-family: var(--font-display);
   font-size: 28px;
@@ -965,19 +965,6 @@ body {
   color: var(--sys-state-error-foreground);
 }
 
-.manual-copy-value {
-  display: block;
-  margin-top: calc(var(--sys-layout-inline-gap) / 2);
-  padding: calc(var(--sys-layout-inline-gap) / 2);
-  border: 1px solid var(--sys-border-default);
-  border-radius: var(--sys-shape-badge);
-  background: var(--sys-surface-canvas);
-  color: var(--sys-text-primary);
-  font: var(--sys-type-meta);
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-
 /* One-click copy and save-note buttons on each quote */
 .quote-copy-btn,
 .quote-save-note-btn {
@@ -1014,6 +1001,11 @@ body {
   background: var(--comp-action-chip-hover);
 }
 
+.quote-save-note-btn[data-save-state="saved"] svg {
+  color: var(--sys-brand-mark);
+  stroke: var(--sys-brand-mark);
+}
+
 .quote-copy-btn:disabled,
 .quote-save-note-btn:disabled {
   border-color: var(--sys-state-disabled-border);
@@ -1022,15 +1014,13 @@ body {
   cursor: not-allowed;
 }
 
-.quote-copy-btn[data-feedback-state="success"],
-.quote-save-note-btn[data-feedback-state="success"] {
+.quote-copy-btn[data-feedback-state="success"] {
   border-color: var(--sys-state-success-border);
   background: var(--sys-state-success-surface);
   color: var(--sys-state-success-foreground);
 }
 
-.quote-copy-btn[data-feedback-state="error"],
-.quote-save-note-btn[data-feedback-state="error"] {
+.quote-copy-btn[data-feedback-state="error"] {
   border-color: var(--sys-state-error-border);
   background: var(--sys-state-error-surface);
   color: var(--sys-state-error-foreground);
@@ -1041,18 +1031,37 @@ body {
    ============================================================ */
 
 /* Small badge showing where the transcript came from */
+.transcript-source-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--sys-layout-control-gap);
+  padding: var(--sys-layout-inline-gap) 0
+    var(--sys-layout-card-padding-compact);
+  border-bottom: 1px solid var(--border);
+}
+
 .transcript-source-badge {
   display: flex;
   align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
   gap: 7px;
   font-family: var(--font-body);
   font-weight: 500;
   font-size: 11px;
   letter-spacing: 0.2px;
   color: var(--sys-text-secondary);
-  padding: 6px 0 12px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 0;
+  margin: 0;
+  border-bottom: 0;
+}
+
+.transcript-source-copy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Colored dot indicator */
@@ -1124,6 +1133,45 @@ body {
 .transcript-original,
 .transcript-translation {
   display: block;
+}
+
+.content-original,
+.content-translation {
+  display: block;
+}
+
+.content-original + .content-translation {
+  margin-top: var(--sys-layout-inline-gap);
+  padding-top: var(--sys-layout-inline-gap);
+  border-top: 1px solid var(--sys-border-default);
+}
+
+.content-translation {
+  color: var(--sys-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.content-translation-pending {
+  color: var(--sys-text-secondary);
+}
+
+[data-translation-state="pending"] .content-translation::before {
+  display: inline-block;
+  margin-right: var(--sys-layout-inline-gap);
+  content: "…";
+  color: var(--sys-state-info-indicator);
+  font-weight: 700;
+}
+
+.content-translation-error {
+  color: var(--sys-state-error-foreground);
+}
+
+[data-translation-state="error"] .content-translation::before {
+  display: inline-block;
+  margin-right: var(--sys-layout-inline-gap);
+  content: "!";
+  font-weight: 700;
 }
 
 .transcript-original + .transcript-translation {
@@ -1310,6 +1358,33 @@ body {
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Copy feedback is transient and lives in one neutral surface, so the
+   action buttons can keep their stable Text/Timestamp affordance. */
+.side-panel-toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--comp-panel-inset);
+  z-index: 110;
+  max-width: calc(100% - (2 * var(--comp-panel-inset)));
+  padding: var(--sys-layout-inline-gap) var(--sys-layout-control-gap);
+  border: 1px solid var(--sys-border-default);
+  border-radius: var(--sys-shape-control);
+  background: var(--comp-toast-bg);
+  color: var(--sys-text-primary);
+  box-shadow: var(--sys-elevation-raised);
+  font: var(--sys-type-label);
+  text-align: center;
+  transform: translate(-50%, 8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.side-panel-toast:not([hidden]) {
+  transform: translate(-50%, 0);
+  opacity: 1;
 }
 
 /* ============================================================
@@ -1864,12 +1939,6 @@ body {
   cursor: not-allowed;
 }
 
-.note-action-btn[data-feedback-state="success"] {
-  border-color: var(--sys-state-success-border);
-  background: var(--sys-state-success-surface);
-  color: var(--sys-state-success-foreground);
-}
-
 .note-action-btn[data-feedback-state="error"],
 .note-delete[data-feedback-state="error"] {
   border-color: var(--sys-state-error-border);
@@ -1930,11 +1999,6 @@ button:focus-visible,
   .transcript-toolbar {
     align-items: flex-start;
     flex-wrap: wrap;
-  }
-
-  .transcript-actions {
-    width: 100%;
-    justify-content: flex-end;
   }
 
   .quote-meta {

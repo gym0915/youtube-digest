@@ -6,8 +6,8 @@
       "failure": "Could not copy the quote. Select the quote text to copy it manually, or try again."
     },
     "save": {
-      "pending": "Saving this quote as a note…",
-      "success": "Quote saved to this video's notes.",
+      "pending": "",
+      "success": "",
       "failure": "Could not save this quote. Try again."
     }
   },

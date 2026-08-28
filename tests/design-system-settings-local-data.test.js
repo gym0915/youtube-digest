@@ -284,6 +284,8 @@ test("DS-09 drives controlled clipboard and storage results without a browser", 
       digest_second: { transcript: "second" },
       keep_me: "unchanged",
       ytd_notes: [{ id: "note-1" }],
+      ytd_note_translations: { "note:1": { text: "\u7b14\u8bb0\u8bd1\u6587" } },
+      ytd_video_cache_index: { version: 1, entries: {} },
       ytd_options_language: "en",
     },
   });
@@ -310,7 +312,11 @@ test("DS-09 drives controlled clipboard and storage results without a browser", 
   await success.elements.clearCacheBtn.getListener("click")();
   assert.equal(success.values.has("digest_first"), false);
   assert.equal(success.values.has("digest_second"), false);
+  assert.equal(success.values.has("ytd_video_cache_index"), false);
   assert.equal(success.values.get("keep_me"), "unchanged");
+  assert.deepEqual(success.values.get("ytd_note_translations"), {
+    "note:1": { text: "\u7b14\u8bb0\u8bd1\u6587" },
+  });
   assert.equal(success.elements.clearCacheStatus.dataset.state, "success");
   assert.equal(success.elements.clearCacheStatus.querySelector(".status-message-text").textContent, "Cleared 2 cached digests.");
 

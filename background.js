@@ -1123,6 +1123,16 @@ async function handleSaveNote(
     const canonicalVideoUrl = YTD_SETTINGS.canonicalYouTubeUrl(videoId);
     const safeTimestamp = Math.max(0, Math.floor(Number(timestamp) || 0));
 
+    const savedNotes = await chrome.storage.local.get("ytd_notes");
+    const existingNote = (savedNotes.ytd_notes || []).find(
+      (note) =>
+        note?.videoId === videoId &&
+        Number(note.timestampSeconds) === safeTimestamp,
+    );
+    if (existingNote) {
+      return { success: true, alreadySaved: true, note: existingNote };
+    }
+
     // First, try to get the transcript from the digest cache. The side panel
     // saves digests to chrome.storage.LOCAL — this used to look in
     // storage.session (the wrong store), so it missed every time and
@@ -1384,6 +1394,19 @@ async function handleDeleteNote(noteId) {
     let notes = result.ytd_notes || [];
     notes = notes.filter((n) => n.id !== noteId);
     await chrome.storage.local.set({ ytd_notes: notes });
+
+    const translationKey = "ytd_note_translations";
+    const translationResult = await chrome.storage.local.get(translationKey);
+    const translations = translationResult[translationKey] || {};
+    const notePrefix = "note:" + noteId + ":";
+    const remainingTranslations = Object.fromEntries(
+      Object.entries(translations).filter(([key]) => !key.startsWith(notePrefix)),
+    );
+    if (Object.keys(remainingTranslations).length !== Object.keys(translations).length) {
+      await chrome.storage.local.set({
+        [translationKey]: remainingTranslations,
+      });
+    }
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -1470,10 +1493,11 @@ async function getTranslationBaseRules(targetLanguage) {
   });
 }
 
-function validateTranscriptBatchRequest(content) {
+function validateContentBatchRequest(content, contentType = "transcriptBatch") {
   const segments = content?.segments;
   if (!Array.isArray(segments) || segments.length < 1 || segments.length > 4) {
-    throw new Error("Transcript translation requires 1 to 4 segments");
+    const unitName = contentType === "transcriptBatch" ? "segments" : "content items";
+    throw new Error(`${contentType} translation requires 1 to 4 ${unitName}`);
   }
 
   const seenIds = new Set();
@@ -1482,19 +1506,23 @@ function validateTranscriptBatchRequest(content) {
     const id = typeof segment?.id === "string" ? segment.id.trim() : "";
     const text = typeof segment?.text === "string" ? segment.text.trim() : "";
     if (!/^[A-Za-z0-9:_-]{1,128}$/.test(id) || seenIds.has(id)) {
-      throw new Error("Transcript translation segment IDs must be unique and stable");
+      throw new Error("Translation content item IDs must be unique and stable");
     }
     if (!text || text.length > 4000) {
-      throw new Error("Transcript translation segment text is invalid or too long");
+      throw new Error("Translation content item text is invalid or too long");
     }
     seenIds.add(id);
     totalCharacters += text.length;
     return { id, text };
   });
   if (totalCharacters > 12000) {
-    throw new Error("Transcript translation batch is too large");
+    throw new Error("Translation content batch is too large");
   }
   return normalized;
+}
+
+function validateTranscriptBatchRequest(content) {
+  return validateContentBatchRequest(content, "transcriptBatch");
 }
 
 function looksLikeChineseTranslation(text, sourceText) {
@@ -1541,8 +1569,8 @@ function normalizeTranslatedSegmentBatch(parsed, sourceSegments) {
 
 /**
  * Translates content using DeepSeek.
- * @param {Object} content - JSON object containing semantic transcript segments
- * @param {string} contentType - Must be 'transcriptBatch'
+ * @param {Object} content - JSON object containing translatable content items
+ * @param {string} contentType - 'transcriptBatch', 'overviewBatch', or 'notesBatch'
  * @param {string} targetLanguage - 'zh' for Simplified Chinese
  * @param {string} videoTitle - The video title (for context)
  * @returns {Object} - { success, translatedContent } or { success: false, error }
@@ -1560,7 +1588,12 @@ async function handleTranslateContent(
         error: `Unsupported translation target: ${String(targetLanguage)}`,
       };
     }
-    if (contentType !== "transcriptBatch") {
+    const supportedContentTypes = new Set([
+      "transcriptBatch",
+      "overviewBatch",
+      "notesBatch",
+    ]);
+    if (!supportedContentTypes.has(contentType)) {
       return {
         success: false,
         error: `Unsupported translation content type: ${String(contentType)}`,
@@ -1572,12 +1605,17 @@ async function handleTranslateContent(
       return { success: false, error: "DeepSeek API key not configured" };
     }
 
-    const sourceSegments = validateTranscriptBatchRequest(content);
+    const sourceSegments = validateContentBatchRequest(content, contentType);
     const langName = "Simplified Chinese";
     const baseRules = await getTranslationBaseRules(targetLanguage);
+    const promptSectionByContentType = {
+      transcriptBatch: "Transcript batch translation",
+      overviewBatch: "Overview batch translation",
+      notesBatch: "Notes batch translation",
+    };
     const systemPrompt = await loadPromptSection(
       "translation.md",
-      "Transcript batch translation",
+      promptSectionByContentType[contentType],
       {
         langName,
         videoTitle: videoTitle || "Unknown",
@@ -1662,6 +1700,7 @@ async function callAiTranslation(
 globalThis.__YTD_TRANSLATION_TESTING__ = {
   requestAiCompletion,
   callAiTranslation,
+  validateContentBatchRequest,
   validateTranscriptBatchRequest,
   normalizeTranslatedSegmentBatch,
   handleTranslateContent,

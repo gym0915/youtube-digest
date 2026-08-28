@@ -5,7 +5,7 @@
 Turn every YouTube video into a resource for deep learning. YouTube Digest brings transcripts, bilingual translation, AI overviews, explanations, and timestamped notes into one Chrome side panel, so you can study ideas and language without losing your place.
 
 - Turn captions into a readable, searchable learning resource.
-- Learn languages with the original transcript, a Simplified Chinese translation, or an aligned bilingual view.
+- Read Transcript, Overview, and Notes as original content, Simplified Chinese, or aligned bilingual content.
 - Build understanding with an AI overview, chapters, key quotes, and selected-text explanations.
 - Navigate long videos by clicking timestamps in the transcript, overview, or notes.
 - Save polished timestamped notes for later study.
@@ -101,9 +101,12 @@ Keys and settings are stored in Chrome's local extension storage on your device.
 - Google Chrome 116 or newer, using the Side Panel API.
 - Standard `youtube.com/watch` video pages.
 - Native subtitle tracks returned by Supadata. YouTube Digest prefers English when available, but may show another native language.
-- Original, Simplified Chinese, and aligned bilingual transcript views.
+- Original, Simplified Chinese, and aligned bilingual views for Transcript, Overview, and Notes.
 - AI overviews, selected-text explanations, translation, and automatic note polishing.
-- Local notes and a local cache for recent transcript and digest results.
+- Local notes and a 6 MiB least-recently-used cache for Transcript, Overview,
+  and generated translations. Cached Transcript, Overview, and previously
+  generated translations reopen without another request; notes and their
+  translations are kept separately.
 - DeepSeek V4 Flash for all published AI features. Other providers require a local code adaptation and are not supported by this published version.
 
 Shorts, live streams, private or access-restricted videos, and videos without an available native transcript may not work. Firefox, Safari, mobile browsers, and other Chromium browsers are not currently tested or supported.
@@ -138,7 +141,7 @@ A measured 20-minute English talk contained **2,935 spoken English words** and 1
 
 If all input is billed as cache miss, input costs about $0.0046 and output costs about $0.0010 to $0.0013, for a total of about $0.0056 to $0.0059. When much of the repeated system prompt hits DeepSeek's automatic best-effort cache, a realistic lower end is about $0.002 to $0.003. A practical estimate for fully translating this talk is therefore **$0.002 to $0.006 USD, about ¥0.02 to ¥0.04**.
 
-Translation is lazy and progressive. Only rows in the current Transcript viewport or its small 120px prefetch band are eligible for new calls; queued rows dropped after scrolling away are not sent, and no background job translates the rest. Cached segments are reused. Retries, provider behavior, and pricing changes can increase the final cost.
+Translation is lazy and progressive. Only content items in the active Transcript, Overview, or Notes viewport and its small 120px prefetch band are eligible for new calls; queued items dropped after scrolling away are not sent, and no background job translates the rest. Cached translations are reused across Chinese and bilingual modes. Retries, provider behavior, and pricing changes can increase the final cost.
 
 ## Remix it with your coding agent
 
@@ -164,7 +167,7 @@ YouTube Digest makes provider requests directly from the extension:
 
 1. It sends a canonical YouTube watch URL to Supadata to request the native transcript.
 2. It sends the transcript and relevant video metadata to DeepSeek when you request AI features.
-3. Focused features send only the content they need, such as selected text with context or small transcript batches for translation.
+3. Focused features send only the content they need, such as selected text with context or small visible Transcript, Overview, or Notes batches for translation.
 4. It stores keys, settings, notes, and recent cache entries locally in Chrome.
 
 There is no YouTube Digest account system, advertising, analytics, or telemetry. Supadata and DeepSeek still receive data under their own terms and privacy policies. See [PRIVACY.md](PRIVACY.md) for details.

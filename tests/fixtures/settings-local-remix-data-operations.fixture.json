@@ -7,7 +7,7 @@
   "dataOperations": [
     {
       "key": "cache",
-      "storageEffect": "Read all current local keys, then remove only digest_ keys.",
+      "storageEffect": "Read all current local keys, then remove digest_ keys and the video-cache index only.",
       "success": "Cleared 2 cached digests."
     },
     {

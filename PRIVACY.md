@@ -30,9 +30,8 @@ The published version sends AI feature content to DeepSeek V4 Flash at `https://
 
 - transcript plus relevant title, channel, description, or duration for an overview;
 - selected text plus nearby transcript context for an explanation;
-- small semantic transcript batches currently needed by the Transcript viewport
-  for progressive Chinese translation, or requested overview or explanation
-  content;
+- small visible content batches currently needed by the Transcript, Overview, or
+  Notes viewport for progressive Chinese translation;
 - nearby transcript context and video metadata when polishing a saved note.
 
 The endpoint and `deepseek-v4-flash` model are fixed in the published Settings page. You provide one DeepSeek API key. To use another provider or model, you must adapt your own local source copy and its permissions. The Settings page provides a coding-agent prompt for that purpose and warns you never to include an API key in the prompt or chat.
@@ -47,9 +46,12 @@ YouTube Digest uses Chrome's local extension storage, not a YouTube Digest cloud
 
 - Supadata and DeepSeek settings and API keys remain on the device in Chrome's extension storage.
 - Saved notes remain until you delete them or remove/clear the extension's data. The extension keeps up to 100 notes.
-- Recent transcript, digest, and per-segment translation cache entries are stored
-  locally. The cache is limited to 20 videos, and entries older than 30 days are
-  removed when the side panel opens.
+- Transcript, Overview, and their generated translations are stored locally as
+  video caches. They share a 6 MiB budget and are retained until the budget is
+  needed, then the least recently opened complete video cache is removed. The
+  cache is not automatically removed because of age. Notes and their
+  translations are stored separately and are not removed by clearing video
+  caches.
 
 Chrome extension storage is not a password vault. Anyone with sufficient access to your browser profile or device may be able to recover locally stored keys or content. Use scoped keys where providers support them, set spending limits, and rotate or revoke a key if the device or browser profile is compromised.
 

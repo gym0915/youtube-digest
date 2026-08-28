@@ -456,6 +456,7 @@ const YTD_OPTIONS = (() => {
           key.startsWith("digest_"),
         );
         if (keys.length) await storage.remove(keys);
+        await storage.remove("ytd_video_cache_index");
         setStatus(clearCacheStatus, "clearedDigests", { count: keys.length });
       } catch (_error) {
         setStatus(clearCacheStatus, "clearCacheFailed");
@@ -472,6 +473,7 @@ const YTD_OPTIONS = (() => {
       setStatus(clearNotesStatus, "deletingNotes");
       try {
         await storage.remove("ytd_notes");
+        await storage.remove("ytd_note_translations");
         setStatus(clearNotesStatus, "notesDeleted");
       } catch (_error) {
         setStatus(clearNotesStatus, "deleteNotesFailed");

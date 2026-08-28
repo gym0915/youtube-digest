@@ -32,6 +32,50 @@
         </button>
       </div>
 
+      <!-- Global content controls: shared by Transcript, Overview, and Notes. -->
+      <div
+        class="transcript-toolbar"
+        id="transcriptToolbar"
+        data-i18n-aria-label="sidepanel.contentTranslationControls"
+        hidden
+      >
+        <div
+          class="transcript-mode-control"
+          id="transcriptModeControl"
+          role="group"
+          data-i18n-aria-label="sidepanel.contentTranslationMode"
+        >
+          <button
+            class="transcript-mode-btn active"
+            type="button"
+            data-transcript-mode="original"
+            aria-pressed="true"
+          data-i18n="transcript.modeOriginal"
+          ></button>
+          <button
+            class="transcript-mode-btn"
+            type="button"
+            data-transcript-mode="zh"
+            aria-pressed="false"
+          data-i18n="transcript.modeChinese"
+          ></button>
+          <button
+            class="transcript-mode-btn"
+            type="button"
+            data-transcript-mode="bilingual"
+            aria-pressed="false"
+          data-i18n="transcript.modeBilingual"
+          ></button>
+          <span
+            class="translation-spinner"
+            id="langSpinner"
+            role="status"
+            aria-live="polite"
+            data-i18n-aria-label="sidepanel.translationInProgress"
+          ></span>
+        </div>
+      </div>
+
       <!-- Tab navigation -->
       <div
         class="tabs"
@@ -75,77 +119,6 @@
         ></button>
       </div>
 
-      <!-- Transcript controls live in the fixed header so they remain visibly
-           connected to the active Transcript tab while the transcript scrolls. -->
-      <div
-        class="transcript-toolbar"
-        id="transcriptToolbar"
-        data-i18n-aria-label="sidepanel.transcriptControls"
-        hidden
-      >
-        <div
-          class="transcript-mode-control"
-          id="transcriptModeControl"
-          role="group"
-          data-i18n-aria-label="sidepanel.transcriptLanguage"
-        >
-          <button
-            class="transcript-mode-btn active"
-            type="button"
-            data-transcript-mode="original"
-            aria-pressed="true"
-          data-i18n="transcript.modeOriginal"
-          ></button>
-          <button
-            class="transcript-mode-btn"
-            type="button"
-            data-transcript-mode="zh"
-            aria-pressed="false"
-          data-i18n="transcript.modeChinese"
-          ></button>
-          <button
-            class="transcript-mode-btn"
-            type="button"
-            data-transcript-mode="bilingual"
-            aria-pressed="false"
-          data-i18n="transcript.modeBilingual"
-          ></button>
-          <span
-            class="translation-spinner"
-            id="langSpinner"
-            role="status"
-            aria-live="polite"
-            data-i18n-aria-label="sidepanel.translationInProgress"
-          ></span>
-        </div>
-        <div class="transcript-actions">
-          <button
-            class="transcript-action-btn"
-            id="copyTranscriptBtn"
-            type="button"
-            data-i18n-title="sidepanel.copyTranscript"
-            data-i18n-aria-label="sidepanel.copyTranscript"
-          >
-            <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-            </svg>
-          </button>
-          <button
-            class="transcript-action-btn"
-            id="exportTranscriptBtn"
-            type="button"
-            data-i18n-title="sidepanel.exportTranscript"
-            data-i18n-aria-label="sidepanel.exportTranscript"
-          >
-            <svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" x2="12" y1="15" y2="3" />
-            </svg>
-          </button>
-        </div>
-      </div>
     </div>
 
     <!-- MAIN CONTENT -->
@@ -200,6 +173,40 @@
           aria-hidden="false"
         >
           <div class="section">
+            <div class="transcript-source-row">
+              <div
+                class="transcript-source-badge"
+                id="transcriptSourceBadge"
+                aria-live="polite"
+              ></div>
+              <div class="transcript-actions">
+                <button
+                  class="transcript-action-btn"
+                  id="copyTranscriptBtn"
+                  type="button"
+                  data-i18n-title="sidepanel.copyTranscript"
+                  data-i18n-aria-label="sidepanel.copyTranscript"
+                >
+                  <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                  </svg>
+                </button>
+                <button
+                  class="transcript-action-btn"
+                  id="exportTranscriptBtn"
+                  type="button"
+                  data-i18n-title="sidepanel.exportTranscript"
+                  data-i18n-aria-label="sidepanel.exportTranscript"
+                >
+                  <svg class="lucide lucide-download" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" x2="12" y1="15" y2="3" />
+                  </svg>
+                </button>
+              </div>
+            </div>
             <div id="transcriptList"></div>
           </div>
         </div>
@@ -369,15 +376,24 @@
         <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
       </svg>
     </button>
-    <p
-      class="follow-playback-status"
-      id="followPlaybackStatus"
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-    ></p>
+        <p
+          class="follow-playback-status"
+          id="followPlaybackStatus"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></p>
 
-    <script src="i18n.js"></script>
+        <div
+          class="side-panel-toast"
+          id="sidePanelToast"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          hidden
+        ></div>
+
+        <script src="i18n.js"></script>
     <script src="settings.js"></script>
     <script src="segmented-control.js"></script>
     <script src="sidepanel.js"></script>

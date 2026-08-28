@@ -9,6 +9,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const html = read("sidepanel.html");
 const css = read("sidepanel.css");
 const js = read("sidepanel.js");
+const background = read("background.js");
 const fixture = JSON.parse(read("tests/fixtures/side-panel-reading-shell.fixture.json"));
 const feedbackFixture = JSON.parse(read("tests/fixtures/side-panel-feedback.fixture.json"));
 const notesExplainPlaybackFixture = JSON.parse(
@@ -97,6 +98,12 @@ test("Notes empty states use the Lucide notebook-pen icon instead of an emoji", 
   assert.match(css, /\.notes-intro-icon\s*\{[^}]*width:\s*var\(--sys-icon-size-small\);[^}]*stroke:\s*currentColor;/);
 });
 
+test("Saved note text uses the Overview quote mark without a closing quote", () => {
+  assert.doesNotMatch(js, /<div class="note-text">"<span class="note-text-content"><\/span>"<\/div>/);
+  assert.match(js, /<div class="note-text"><span class="note-text-content"><\/span><\/div>/);
+  assert.match(css, /\.quote-text::before,\s*\.note-text::before\s*\{[\s\S]*content:\s*"\\201C"[\s\S]*color:\s*var\(--sys-brand-mark\);/);
+});
+
 test("DS-02 and DS-03 consume no ref token outside the token declaration layer", () => {
   const selectors = css.split("/* ============================================================\n   RESET & BASE")[1];
   assert.ok(selectors, "expected the token declaration layer before reset styles");
@@ -157,14 +164,33 @@ test("DS-07 keeps quote and note feedback local to real clipboard and storage ou
   );
   assert.match(js, /function setLocalActionFeedback\([\s\S]*button\.disabled = state === "pending"/);
   assert.match(js, /action: "saveNote"[\s\S]*videoId: requestVideoId[\s\S]*timestamp: quote\.timestampSeconds/);
-  assert.match(js, /label: `✓ \$\{t\("overview\.saved"\)\}`[\s\S]*message: t\("overview\.quoteSaved"\)/);
-  assert.match(js, /label: t\("overview\.retrySave"\)[\s\S]*ariaLabel: t\("overview\.retrySaveQuote"\)/);
+  const saveQuoteSource = js.slice(
+    js.indexOf("async function saveQuoteAsNote"),
+    js.indexOf("/**\n * Legacy function for backwards compatibility"),
+  );
+  assert.match(
+    saveQuoteSource,
+    /setQuoteSavePending\(btn, true\)/,
+  );
+  assert.match(
+    saveQuoteSource,
+    /setQuoteSaveButtonState\(btn, true\)/,
+  );
+  assert.doesNotMatch(
+    saveQuoteSource,
+    /t\("overview\.saving"\)/,
+  );
+  assert.doesNotMatch(
+    saveQuoteSource,
+    /t\("overview\.(savingQuote|quoteSaved)"\)/,
+  );
+  assert.match(js, /function setQuoteSavePending\(button, pending\)/);
   assert.match(js, /action: "getNotes"[\s\S]*requestGeneration !== notesRequestGeneration/);
   assert.match(js, /action: "deleteNote"[\s\S]*noteId: noteId/);
   assert.match(js, /if \(result\?\.success\) \{[\s\S]*loadNotes\(filteredVideoId\);/);
   assert.match(js, /label: t\("notes\.retryDelete"\)[\s\S]*ariaLabel: t\("notes\.retryDeletingAria"\)/);
   assert.match(js, /t\("notes\.copyTextFailed"\)/);
-  assert.match(js, /manualCopyText: note\.timestampedUrl/);
+  assert.match(js, /showSidePanelToast\(t\("notes\.copyTimestampFailed"\)\)/);
   assert.doesNotMatch(
     js.slice(js.indexOf("function renderAnalysisResults"), js.indexOf("function renderResults")),
     /setTimeout\(/,
@@ -173,8 +199,52 @@ test("DS-07 keeps quote and note feedback local to real clipboard and storage ou
     js.slice(js.indexOf("function renderNotes"), js.indexOf("// ============================================================\n// AUTO-SCROLL")),
     /setTimeout\(/,
   );
+  assert.match(css, /\.quote-actions\s*\{[^}]*gap:\s*var\(--sys-layout-inline-gap\);/);
+  assert.match(css, /\.note-actions\s*\{[^}]*gap:\s*var\(--sys-layout-inline-gap\);/);
   assert.match(css, /\.quote-copy-btn\[data-feedback-state="success"\][\s\S]*--sys-state-success/);
   assert.match(css, /\.note-feedback\[data-feedback-state="error"\][\s\S]*--sys-state-error/);
+});
+
+test("Key Quote save state is restored from Notes and duplicate saves are blocked", () => {
+  assert.match(js, /function quoteSaveKey\(videoId, timestampSeconds\)/);
+  assert.match(js, /data-quote-save-key/);
+  assert.match(js, /function syncSavedQuoteStatuses\(notes, filteredVideoId\)/);
+  assert.match(js, /savedQuoteKeys\.has\(saveKey\)/);
+  assert.match(js, /setQuoteSaveButtonState\(btn, true\)/);
+  assert.match(background, /alreadySaved: true/);
+  assert.match(background, /Number\(note\.timestampSeconds\) === safeTimestamp/);
+});
+
+test("Key Quote saved state changes only the bookmark and supports cancellation", () => {
+  const saveQuoteSource = js.slice(
+    js.indexOf("async function saveQuoteAsNote"),
+    js.indexOf("/**\n * Legacy function for backwards compatibility"),
+  );
+  assert.match(js, /const savedQuoteNoteIds = new Map\(\)/);
+  assert.match(js, /button\.setAttribute\("data-save-state", isSaved \? "saved" : "idle"\)/);
+  assert.doesNotMatch(js.slice(js.indexOf("function setQuoteSavePending"), js.indexOf("function clearQuoteSaveFeedback")), /button\.disabled/);
+  assert.match(css, /\.quote-save-note-btn\[data-save-state="saved"\]\s+svg[\s\S]*stroke:\s*var\(--sys-brand-mark\);/);
+  assert.doesNotMatch(css, /\.quote-save-note-btn\[data-feedback-state="success"\]/);
+  assert.match(saveQuoteSource, /deleteNote\(noteId\)/);
+  assert.match(js, /action: "deleteNote"[\s\S]*noteId: noteId/);
+  assert.doesNotMatch(saveQuoteSource, /t\("overview\.saving"\)/);
+  assert.doesNotMatch(saveQuoteSource, /t\("overview\.saved"\)/);
+});
+
+test("Notes copy actions keep neutral buttons and report outcomes through the side-panel toast", () => {
+  const renderNotesSource = js.slice(
+    js.indexOf("function renderNotes"),
+    js.indexOf("// ============================================================\n// AUTO-SCROLL"),
+  );
+  assert.match(
+    html,
+    /class="side-panel-toast"[\s\S]*id="sidePanelToast"[\s\S]*role="status"[\s\S]*aria-live="polite"/,
+  );
+  assert.match(js, /function showSidePanelToast\(message\)/);
+  assert.match(renderNotesSource, /showSidePanelToast\(t\("notes\.copyTextToast"\)\)/);
+  assert.match(renderNotesSource, /showSidePanelToast\(t\("notes\.copyTimestampToast"\)\)/);
+  assert.doesNotMatch(renderNotesSource, /t\("notes\.copied"\)/);
+  assert.doesNotMatch(css, /\.note-action-btn\[data-feedback-state="success"\]/);
 });
 
 test("DS-07 makes Explain a retryable dialog without cancelling or accepting stale requests", () => {

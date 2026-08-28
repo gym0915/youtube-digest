@@ -38,20 +38,589 @@ let youtubeTabId = null; // Store the YouTube tab ID for reliable messaging
 let errorAction = null;
 let renderedNotes = null;
 let renderedNotesFilter = null;
+let sidePanelToastTimer = null;
+const noteCopyInFlight = new Set();
+const savedQuoteKeys = new Set();
+const savedQuoteNoteIds = new Map();
+const quoteSaveInFlight = new Set();
 let visibleError = null;
 
 // --- Translation state ---
-// The public transcript control intentionally supports only the original
-// subtitles, Chinese, and an aligned source + Chinese view.
+// The shared content control supports the original source, Chinese, and an
+// aligned source + Chinese view.
 let currentTranscriptMode = "original";
+// The global content translation mode is shared by Transcript, Overview, and Notes.
+let currentContentTab = "transcript";
 let translationGeneration = 0; // Invalidates responses from older UI modes/videos.
 let translationWorkCount = 0;
 let transcriptScrollObserver = null;
-// Stable keys include the video, target language, and semantic segment ID.
+// Stable keys include the content owner, target language, content item, source
+// fingerprint, and translation rules version.
 let transcriptParagraphCache = new Map();
+const contentTranslationCache = transcriptParagraphCache;
+const contentTranslationMeta = new Map();
 const transcriptTranslationInFlight = new Map();
+const contentTranslationInFlight = transcriptTranslationInFlight;
+const contentTranslationStates = new Map();
+const TRANSLATION_RULES_VERSION = "v2";
+const NOTES_TRANSLATION_STORAGE_KEY = "ytd_note_translations";
+const VIDEO_CACHE_PREFIX = "digest_";
+const VIDEO_CACHE_INDEX_STORAGE_KEY = "ytd_video_cache_index";
+const VIDEO_CACHE_INDEX_VERSION = 1;
+const VIDEO_CACHE_BUDGET_BYTES = 6 * 1024 * 1024;
+let notesTranslationCacheLoaded = false;
+let activeContentTranslationSession = null;
 let transcriptCacheWriteChain = Promise.resolve();
 const TRANSLATION_MESSAGE_TIMEOUT_MS = 130_000;
+
+function quoteSaveKey(videoId, timestampSeconds) {
+  const safeTimestamp = Math.max(0, Math.floor(Number(timestampSeconds) || 0));
+  return String(videoId || "") + ":" + safeTimestamp;
+}
+
+function rememberSavedQuoteNote(note, fallbackKey = "") {
+  const saveKey = fallbackKey || quoteSaveKey(note?.videoId, note?.timestampSeconds);
+  if (!saveKey || saveKey === ":0") return;
+
+  savedQuoteKeys.add(saveKey);
+  if (!note?.id) return;
+
+  const noteIds = savedQuoteNoteIds.get(saveKey) || new Set();
+  noteIds.add(note.id);
+  savedQuoteNoteIds.set(saveKey, noteIds);
+}
+
+function forgetSavedQuoteKey(saveKey) {
+  savedQuoteKeys.delete(saveKey);
+  savedQuoteNoteIds.delete(saveKey);
+}
+
+function setQuoteSavePending(button, pending) {
+  if (!button) return;
+  button.setAttribute("aria-busy", String(pending));
+}
+
+function clearQuoteSaveFeedback(button) {
+  const feedback = button
+    ?.closest(".quote-action")
+    ?.querySelector(".quote-action-feedback");
+  if (!feedback) return;
+  feedback.replaceChildren();
+  feedback.hidden = true;
+  delete feedback.dataset.feedbackState;
+}
+
+function setQuoteSaveFeedback(button, message) {
+  const feedback = button
+    ?.closest(".quote-action")
+    ?.querySelector(".quote-action-feedback");
+  if (!feedback) return;
+
+  feedback.replaceChildren();
+  feedback.hidden = !message;
+  feedback.dataset.feedbackState = message ? "error" : "";
+  if (message) feedback.append(document.createTextNode(message));
+}
+
+function setQuoteSaveButtonState(button, saved) {
+  if (!button) return;
+
+  const label = button.querySelector(".quote-save-note-label");
+  const isSaved = Boolean(saved);
+  clearQuoteSaveFeedback(button);
+  button.disabled = false;
+  button.setAttribute("aria-busy", "false");
+  button.setAttribute("aria-pressed", String(isSaved));
+  button.setAttribute("data-save-state", isSaved ? "saved" : "idle");
+  button.removeAttribute("data-feedback-state");
+  if (isSaved) {
+    button.setAttribute("aria-label", t("overview.removeQuoteTitle"));
+    button.title = t("overview.removeQuoteTitle");
+    if (label) label.textContent = t("overview.saveQuote");
+    return;
+  }
+
+  button.setAttribute("aria-label", t("overview.saveQuoteTitle"));
+  button.title = t("overview.saveQuoteTitle");
+  if (label) label.textContent = t("overview.saveQuote");
+}
+
+function updateRenderedQuoteSaveStates() {
+  document
+    .querySelectorAll(".quote-save-note-btn[data-quote-save-key]")
+    .forEach((button) => {
+      setQuoteSaveButtonState(
+        button,
+        savedQuoteKeys.has(button.dataset.quoteSaveKey),
+      );
+    });
+}
+
+function syncSavedQuoteStatuses(notes, filteredVideoId) {
+  if (filteredVideoId) {
+    const prefix = String(filteredVideoId) + ":";
+    for (const key of savedQuoteKeys) {
+      if (key.startsWith(prefix)) forgetSavedQuoteKey(key);
+    }
+  } else {
+    savedQuoteKeys.clear();
+    savedQuoteNoteIds.clear();
+  }
+
+  (Array.isArray(notes) ? notes : []).forEach((note) => {
+    if (note?.videoId) {
+      rememberSavedQuoteNote(note);
+    }
+  });
+  updateRenderedQuoteSaveStates();
+}
+
+function hashContentText(text) {
+  let hash = 2166136261;
+  for (const character of String(text || "")) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function isContentAlreadyChinese(text) {
+  const value = String(text || "");
+  const chineseCharacters = (value.match(/[\u3400-\u9fff]/g) || []).length;
+  const latinCharacters = (value.match(/[A-Za-z]/g) || []).length;
+  return chineseCharacters >= 2 && chineseCharacters >= latinCharacters;
+}
+
+function createContentTranslationItem({
+  videoId = null,
+  contentType,
+  id,
+  text,
+  videoTitle = "",
+  update,
+}) {
+  return {
+    videoId,
+    contentType,
+    id: String(id),
+    text: String(text || "").trim(),
+    videoTitle,
+    update,
+  };
+}
+
+function getContentTranslationDescriptor(item) {
+  const owner =
+    item.contentType === "notesBatch"
+      ? "note:" + item.id
+      : "video:" + item.videoId;
+  const sourceHash = hashContentText(item.text);
+  const key = [
+    owner,
+    "zh",
+    item.contentType,
+    item.id,
+    sourceHash,
+    TRANSLATION_RULES_VERSION,
+  ].join(":");
+  return {
+    key,
+    owner,
+    sourceHash,
+    contentType: item.contentType,
+    itemId: item.id,
+    videoId: item.videoId,
+    version: TRANSLATION_RULES_VERSION,
+  };
+}
+
+function legacyTranscriptTranslationCacheKeyForVideo(videoId, segment) {
+  return String(videoId) + ":zh:semantic:" + segment.id;
+}
+
+function getContentTranslationText(item) {
+  const descriptor = getContentTranslationDescriptor(item);
+  const cached = contentTranslationCache.get(descriptor.key);
+  if (cached) return cached;
+
+  // Migrate the pre-content-mode Transcript cache after the source Transcript
+  // has been loaded. The old digest is tied to that exact cached Transcript.
+  if (item.contentType === "transcriptBatch") {
+    const legacyKey = legacyTranscriptTranslationCacheKeyForVideo(
+      item.videoId,
+      item,
+    );
+    const legacy = contentTranslationCache.get(legacyKey);
+    if (legacy) {
+      rememberContentTranslation(item, legacy);
+      return legacy;
+    }
+  }
+  return "";
+}
+
+function rememberContentTranslation(item, text) {
+  const value = String(text || "").trim();
+  if (!value) return null;
+  const descriptor = getContentTranslationDescriptor(item);
+  contentTranslationCache.set(descriptor.key, value);
+  contentTranslationMeta.set(descriptor.key, descriptor);
+  return {
+    key: descriptor.key,
+    text: value,
+    videoId: descriptor.videoId,
+    contentType: descriptor.contentType,
+    itemId: descriptor.itemId,
+    meta: descriptor,
+    legacyKey:
+      item.contentType === "transcriptBatch"
+        ? legacyTranscriptTranslationCacheKeyForVideo(item.videoId, item)
+        : "",
+  };
+}
+
+function getContentTranslationState(item) {
+  const descriptor = getContentTranslationDescriptor(item);
+  const cached = getContentTranslationText(item);
+  return (
+    contentTranslationStates.get(descriptor.key) || {
+      status: cached ? "complete" : "pending",
+      error: "",
+    }
+  );
+}
+
+function forgetNoteTranslations(noteId) {
+  const prefix = "note:" + noteId + ":";
+  for (const key of contentTranslationCache.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    contentTranslationCache.delete(key);
+    contentTranslationMeta.delete(key);
+    contentTranslationStates.delete(key);
+  }
+}
+
+function setContentTranslationState(item, status, error = "") {
+  contentTranslationStates.set(getContentTranslationDescriptor(item).key, {
+    status,
+    error,
+  });
+}
+
+function contentTranslationErrorKey(error) {
+  return error === "Translation unavailable."
+    ? "contentTranslation.unavailable"
+    : "contentTranslation.failed";
+}
+
+function renderContentTranslationMarkup(
+  item,
+  mode,
+  translated,
+  error,
+  sourceRenderer = escapeHtml,
+) {
+  if (mode === "original") return sourceRenderer(item.text);
+
+  const source = sourceRenderer(item.text);
+  const isSameContent = translated && translated.trim() === item.text.trim();
+  let translationHtml = "";
+  if (translated) {
+    translationHtml = sourceRenderer(translated);
+  } else if (error) {
+    const errorKey = contentTranslationErrorKey(error);
+    translationHtml =
+      '<span class="content-translation-error-message" data-i18n-error="' +
+      errorKey +
+      '">' +
+      escapeHtml(t(errorKey)) +
+      '</span><button class="content-translation-retry-btn" type="button">' +
+      escapeHtml(t("contentTranslation.retry")) +
+      "</button>";
+  } else {
+    translationHtml = escapeHtml(t("contentTranslation.waiting"));
+  }
+
+  const translationState = translated ? "complete" : error ? "error" : "pending";
+  const translationClass = translated
+    ? ""
+    : error
+      ? "content-translation-error"
+      : "content-translation-pending";
+  const translation =
+    '<span class="content-translation ' +
+    translationClass +
+    '" data-translation-state="' +
+    translationState +
+    '" role="status" aria-live="polite" aria-atomic="true">' +
+    translationHtml +
+    "</span>";
+
+  if (mode === "bilingual" && !isSameContent) {
+    return (
+      '<span class="content-copy"><span class="content-original">' +
+      source +
+      "</span>" +
+      translation +
+      "</span>"
+    );
+  }
+  if (mode === "bilingual") {
+    return '<span class="content-copy"><span class="content-original">' + source + "</span></span>";
+  }
+  return '<span class="content-copy">' + translation + "</span>";
+}
+
+function renderContentTranslationItem(item, translated = "", error = "") {
+  const target = item.target;
+  if (!target) return;
+
+  const value = translated || getContentTranslationText(item);
+  const storedState = getContentTranslationState(item);
+  const displayError =
+    error || (!value && storedState.status === "error" ? storedState.error : "");
+  target.innerHTML = renderContentTranslationMarkup(
+    item,
+    currentTranscriptMode,
+    value,
+    displayError,
+  );
+  target.dataset.contentTranslationKey = getContentTranslationDescriptor(
+    item,
+  ).key;
+  if (currentTranscriptMode === "original") {
+    target.removeAttribute("data-translation-state");
+    return;
+  }
+
+  const state = value ? "complete" : displayError ? "error" : "pending";
+  target.dataset.translationState = state;
+  const retry = target.querySelector(".content-translation-retry-btn");
+  if (retry) {
+    retry.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      retryContentTranslationItem(item);
+    });
+  }
+}
+
+function prepareImmediateContentTranslations(items) {
+  const entries = [];
+  items.forEach((item) => {
+    if (
+      !getContentTranslationText(item) &&
+      isContentAlreadyChinese(item.text)
+    ) {
+      const entry = rememberContentTranslation(item, item.text);
+      if (entry) {
+        setContentTranslationState(item, "complete");
+        entries.push(entry);
+      }
+    }
+  });
+  return entries;
+}
+
+function retryContentTranslationItem(item) {
+  const session = activeContentTranslationSession;
+  if (!session || session.generation !== translationGeneration) return;
+  const index = session.items.indexOf(item);
+  if (index < 0) return;
+  setContentTranslationState(item, "pending");
+  renderContentTranslationItem(item);
+  session.enqueue(index, true);
+}
+
+function stopContentTranslationSession() {
+  activeContentTranslationSession?.stop?.();
+  activeContentTranslationSession = null;
+  translationWorkCount = 0;
+  setTranslatingSpinner(false);
+}
+
+function startVisibleContentTranslation(items) {
+  if (!items.length || currentTranscriptMode === "original") return;
+
+  translationGeneration += 1;
+  const generation = translationGeneration;
+  const mode = currentTranscriptMode;
+  const surface = currentContentTab;
+  const contentType = items[0].contentType;
+  const videoId = items[0].videoId;
+  const videoTitle = currentVideoTitle;
+  stopContentTranslationSession();
+
+  const immediateEntries = prepareImmediateContentTranslations(items);
+  immediateEntries.forEach((entry) => {
+    const item = items.find(
+      (candidate) => getContentTranslationDescriptor(candidate).key === entry.key,
+    );
+    if (item) renderContentTranslationItem(item, entry.text);
+  });
+  if (immediateEntries.length) {
+    persistContentTranslationEntries(immediateEntries);
+  }
+
+  const queue = [];
+  const queued = new Set();
+  const eligible = new Set();
+  let processing = false;
+  let stopped = false;
+
+  const removeQueued = (index) => {
+    if (!queued.delete(index)) return;
+    const position = queue.indexOf(index);
+    if (position >= 0) queue.splice(position, 1);
+  };
+
+  const processNext = async () => {
+    if (
+      stopped ||
+      processing ||
+      !queue.length ||
+      generation !== translationGeneration ||
+      currentContentTab !== surface ||
+      currentTranscriptMode !== mode
+    ) {
+      return;
+    }
+
+    const indices = [];
+    while (queue.length && indices.length < 3) {
+      const index = queue.shift();
+      queued.delete(index);
+      if (!eligible.has(index)) continue;
+      if (getContentTranslationText(items[index])) continue;
+      indices.push(index);
+    }
+    if (!indices.length) {
+      if (queue.length) processNext();
+      return;
+    }
+
+    processing = true;
+    setTranslatingSpinner(true);
+    try {
+      const sourceBatch = indices.map((index) => items[index]);
+      const aligned = await Promise.all(
+        getContentTranslationPromises(
+          videoId,
+          sourceBatch,
+          videoTitle,
+          contentType,
+        ),
+      );
+      const cacheEntries = [];
+      aligned.forEach((alignedItem, batchIndex) => {
+        const item = sourceBatch[batchIndex];
+        if (alignedItem?.text) {
+          const entry = rememberContentTranslation(item, alignedItem.text);
+          if (entry) cacheEntries.push(entry);
+          setContentTranslationState(item, "complete");
+        } else {
+          setContentTranslationState(
+            item,
+            "error",
+            alignedItem?.error || "Translation failed.",
+          );
+        }
+
+        const isCurrent =
+          generation === translationGeneration &&
+          currentContentTab === surface &&
+          currentTranscriptMode === mode;
+        if (isCurrent) {
+          renderContentTranslationItem(
+            item,
+            alignedItem?.text || "",
+            alignedItem?.error || "",
+          );
+        }
+      });
+      await persistContentTranslationEntries(cacheEntries);
+    } catch (error) {
+      const isCurrent =
+        generation === translationGeneration &&
+        currentContentTab === surface &&
+        currentTranscriptMode === mode;
+      if (isCurrent) {
+        indices.forEach((index) => {
+          const item = items[index];
+          setContentTranslationState(item, "error", error.message);
+          renderContentTranslationItem(item, "", error.message);
+        });
+      }
+    } finally {
+      processing = false;
+      setTranslatingSpinner(false);
+      if (
+        !stopped &&
+        queue.length &&
+        generation === translationGeneration &&
+        currentContentTab === surface &&
+        currentTranscriptMode === mode
+      ) {
+        processNext();
+      }
+    }
+  };
+
+  const enqueue = (index, force = false) => {
+    if (stopped || !Number.isInteger(index) || !items[index]) return;
+    if (!eligible.has(index)) return;
+    const cached = Boolean(getContentTranslationText(items[index]));
+    if ((!force && cached) || queued.has(index)) return;
+    queue.push(index);
+    queued.add(index);
+    Promise.resolve().then(processNext);
+  };
+
+  const stop = () => {
+    stopped = true;
+    queue.length = 0;
+    queued.clear();
+    eligible.clear();
+    observer?.disconnect?.();
+  };
+
+  const observer = new IntersectionObserver(
+    (observerEntries) => {
+      observerEntries
+        .sort(
+          (a, b) =>
+            Number(a.target.dataset.contentTranslationIndex) -
+            Number(b.target.dataset.contentTranslationIndex),
+        )
+        .forEach((entry) => {
+          const index = Number(entry.target.dataset.contentTranslationIndex);
+          if (entry.isIntersecting) {
+            eligible.add(index);
+            enqueue(index);
+          } else {
+            eligible.delete(index);
+            removeQueued(index);
+          }
+        });
+    },
+    {
+      root: document.getElementById("contentArea"),
+      rootMargin: "120px 0px",
+      threshold: 0,
+    },
+  );
+
+  activeContentTranslationSession = {
+    enqueue,
+    stop,
+    items,
+    generation,
+  };
+  items.forEach((item, index) => {
+    item.target?.setAttribute("data-content-translation-index", String(index));
+    if (!getContentTranslationText(item) && item.target) observer.observe(item.target);
+  });
+}
 
 /**
  * Prevent a stopped service worker or dead message channel from leaving the
@@ -247,8 +816,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   await initializeUiLanguage();
   window.YTD_SEGMENTED_CONTROL?.initialize(document);
   setupEventListeners();
-  await evictOldCacheEntries(20);
-
   const configStatus = await chrome.runtime.sendMessage({
     action: "checkConfig",
   });
@@ -609,6 +1176,14 @@ function extractVideoId(url) {
 // DIGEST PIPELINE
 // ============================================================
 
+// A video is a fresh reading context. Do not carry the previous video's tab
+// or translation choice forward, even when the next video's digest is cached.
+function resetContentViewForNewVideo() {
+  currentTranscriptMode = "original";
+  setTranscriptModeButtons(currentTranscriptMode);
+  switchTab("transcript");
+}
+
 async function startDigest(videoId, videoUrl) {
   // Check if we already have this video loaded in memory
   if (videoId === currentVideoId && currentAnalysis) {
@@ -618,11 +1193,15 @@ async function startDigest(videoId, videoUrl) {
 
   // Every video change invalidates observer work and in-flight translations.
   if (videoId !== currentVideoId) {
+    resetContentViewForNewVideo();
     translationGeneration += 1;
     analysisGeneration += 1;
     notesRequestGeneration += 1;
     invalidateExplanationPresentation();
     stopTranscriptTranslationSession();
+    stopContentTranslationSession();
+    renderedNotes = null;
+    renderedNotesFilter = null;
   }
 
   // Check cache for this video
@@ -638,12 +1217,9 @@ async function startDigest(videoId, videoUrl) {
     currentTranscriptLanguage = cached.transcriptLanguage || null;
     isAnalysisLoading = false;
 
-    // Restore semantic-segment translations from persistent storage.
-    if (cached.paragraphCache) {
-      for (const [key, value] of Object.entries(cached.paragraphCache)) {
-        transcriptParagraphCache.set(key, value);
-      }
-    }
+    // Restore all versioned content translations. Legacy Transcript entries
+    // are migrated against the exact Transcript stored in this digest.
+    restoreContentTranslationsForVideo(videoId, cached);
 
     if (currentVideoTitle || currentChannelName) {
       const videoInfo = document.getElementById("videoInfo");
@@ -669,7 +1245,9 @@ async function startDigest(videoId, videoUrl) {
 
     // Setup explain feature
     setupExplainFeature();
-    if (currentTranscriptMode !== "original") translateTranscript();
+    if (currentTranscriptMode !== "original") {
+      translateActiveContentSurface();
+    }
     return;
   }
 
@@ -724,7 +1302,9 @@ async function startDigest(videoId, videoUrl) {
 
   // Setup explain feature for text selection
   setupExplainFeature();
-  if (currentTranscriptMode !== "original") translateTranscript();
+  if (currentTranscriptMode !== "original") {
+    translateActiveContentSurface();
+  }
 
   // Save transcript to cache (without analysis)
   await saveToCache(videoId);
@@ -741,9 +1321,23 @@ async function startDigest(videoId, videoUrl) {
  * Renders the analysis results into the Overview tab.
  * Shows chapters and key quotes only.
  */
+function showSidePanelToast(message) {
+  const toast = document.getElementById("sidePanelToast");
+  if (!toast || !message) return;
+
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(sidePanelToastTimer);
+  sidePanelToastTimer = window.setTimeout(() => {
+    toast.hidden = true;
+    toast.textContent = "";
+  }, 2200);
+}
+
 function renderAnalysisResults(analysis) {
   const chapters = Array.isArray(analysis.chapters) ? analysis.chapters : [];
   const keyQuotes = Array.isArray(analysis.keyQuotes) ? analysis.keyQuotes : [];
+  const overviewTranslationItems = [];
   setOverviewLoadingIndicators(false);
   renderOverviewStatus("success");
 
@@ -770,6 +1364,26 @@ function renderAnalysisResults(analysis) {
         <span class="chapter-summary">${escapeHtml(chapter.summary || "")}</span>
       </div>
     `;
+    const chapterTitleItem = createContentTranslationItem({
+      videoId: currentVideoId,
+      contentType: "overviewBatch",
+      id: "chapter-" + (chapter.timestampSeconds || 0) + "-" + li.dataset.seconds + "-title",
+      text: chapter.title,
+    });
+    chapterTitleItem.target = li.querySelector(".chapter-title");
+    overviewTranslationItems.push(chapterTitleItem);
+    renderContentTranslationItem(chapterTitleItem);
+    if (chapter.summary) {
+      const chapterSummaryItem = createContentTranslationItem({
+        videoId: currentVideoId,
+        contentType: "overviewBatch",
+        id: "chapter-" + (chapter.timestampSeconds || 0) + "-" + li.dataset.seconds + "-summary",
+        text: chapter.summary,
+      });
+      chapterSummaryItem.target = li.querySelector(".chapter-summary");
+      overviewTranslationItems.push(chapterSummaryItem);
+      renderContentTranslationItem(chapterSummaryItem);
+    }
     const seekToChapter = () => {
       setSelectedOverviewChapter(li);
       debugLog(
@@ -808,11 +1422,11 @@ function renderAnalysisResults(analysis) {
         <button class="quote-timestamp" type="button" aria-label="${escapeHtml(t("transcript.playFrom", { timestamp: quote.timestamp }))}">${escapeHtml(quote.timestamp)}</button>
         <div class="quote-actions">
           <div class="quote-action">
-            <button class="quote-save-note-btn" type="button" title="${escapeHtml(t("overview.saveQuoteTitle"))}" aria-label="${escapeHtml(t("overview.saveQuoteTitle"))}">
+            <button class="quote-save-note-btn" type="button" data-quote-save-key="${escapeHtml(quoteSaveKey(currentVideoId, quote.timestampSeconds))}" title="${escapeHtml(t("overview.saveQuoteTitle"))}" aria-label="${escapeHtml(t("overview.saveQuoteTitle"))}">
               <svg class="lucide lucide-bookmark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
-              ${escapeHtml(t("overview.saveQuote"))}
+              <span class="quote-save-note-label">${escapeHtml(t("overview.saveQuote"))}</span>
             </button>
             <span class="action-feedback quote-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
           </div>
@@ -829,6 +1443,15 @@ function renderAnalysisResults(analysis) {
         </div>
       </div>
     `;
+    const quoteTranslationItem = createContentTranslationItem({
+      videoId: currentVideoId,
+      contentType: "overviewBatch",
+      id: "quote-" + (quote.timestampSeconds || 0) + "-" + overviewTranslationItems.length,
+      text: quote.quote,
+    });
+    quoteTranslationItem.target = div.querySelector(".quote-text");
+    overviewTranslationItems.push(quoteTranslationItem);
+    renderContentTranslationItem(quoteTranslationItem);
     div.addEventListener("click", () => {
       debugLog(
         "[YouTube Digest Panel] Quote clicked:",
@@ -870,6 +1493,10 @@ function renderAnalysisResults(analysis) {
     });
 
     const quoteSaveNoteBtn = div.querySelector(".quote-save-note-btn");
+    setQuoteSaveButtonState(
+      quoteSaveNoteBtn,
+      savedQuoteKeys.has(quoteSaveNoteBtn.dataset.quoteSaveKey),
+    );
     quoteSaveNoteBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
       await saveQuoteAsNote(quote, quoteSaveNoteBtn);
@@ -880,6 +1507,10 @@ function renderAnalysisResults(analysis) {
   if (!sortedQuotes.length) {
     quotesList.innerHTML =
       `<div class="overview-empty" role="status"><span aria-hidden="true">○</span>${escapeHtml(t("overview.noQuotes"))}</div>`;
+  }
+
+  if (currentContentTab === "overview" && currentTranscriptMode !== "original") {
+    startVisibleContentTranslation(overviewTranslationItems);
   }
 }
 
@@ -917,15 +1548,16 @@ function setSelectedOverviewChapter(selectedChapter) {
  */
 function setLocalActionFeedback(
   button,
-  { state, label, message, ariaLabel, manualCopyText = "" },
+  { state, label, message, ariaLabel },
 ) {
   button.dataset.feedbackState = state;
   button.disabled = state === "pending";
   button.setAttribute("aria-busy", String(state === "pending"));
   button.setAttribute("aria-label", ariaLabel || label);
   const labelElement = button.querySelector(".note-action-label");
-  if (labelElement) {
-    labelElement.textContent = label;
+  const quoteLabelElement = button.querySelector(".quote-save-note-label");
+  if (labelElement || quoteLabelElement) {
+    (labelElement || quoteLabelElement).textContent = label;
   } else {
     button.textContent = label;
   }
@@ -941,31 +1573,52 @@ function setLocalActionFeedback(
   if (!message) return;
 
   feedback.append(document.createTextNode(message));
-  if (manualCopyText) {
-    const manualCopy = document.createElement("span");
-    manualCopy.className = "manual-copy-value";
-    manualCopy.textContent = manualCopyText;
-    feedback.append(manualCopy);
-  }
 }
 
 /**
  * Saves a key quote as a timestamped note.
  */
 async function saveQuoteAsNote(quote, btn) {
-  if (!currentVideoId || btn.disabled) return;
+  if (!currentVideoId || !btn) return;
 
   const requestVideoId = currentVideoId;
+  const saveKey = quoteSaveKey(requestVideoId, quote.timestampSeconds);
+  if (quoteSaveInFlight.has(saveKey)) return;
+
+  const removing = savedQuoteKeys.has(saveKey);
+  const noteIds = removing
+    ? [...(savedQuoteNoteIds.get(saveKey) || [])]
+    : [];
+  if (removing && !noteIds.length) {
+    // The note list can still be hydrating when the Overview is first shown.
+    // Refresh it before allowing a cancellation without a concrete note ID.
+    loadNotes(requestVideoId);
+    return;
+  }
+
   const requestVideoTitle = currentVideoTitle;
   const requestChannelName = currentChannelName;
-  setLocalActionFeedback(btn, {
-    state: "pending",
-    label: t("overview.saving"),
-    message: t("overview.savingQuote"),
-    ariaLabel: t("overview.savingQuote"),
-  });
+  quoteSaveInFlight.add(saveKey);
+  clearQuoteSaveFeedback(btn);
+  // Keep the visible icon and Note label stable while the operation is pending.
+  setQuoteSavePending(btn, true);
 
   try {
+    if (removing) {
+      for (const noteId of noteIds) {
+        const result = await deleteNote(noteId);
+        if (!result?.success) {
+          throw new Error(result?.error || t("overview.removeQuoteFailed"));
+        }
+      }
+
+      if (requestVideoId !== currentVideoId || !btn.isConnected) return;
+      forgetSavedQuoteKey(saveKey);
+      setQuoteSaveButtonState(btn, false);
+      loadNotes(requestVideoId);
+      return;
+    }
+
     const result = await chrome.runtime.sendMessage({
       action: "saveNote",
       videoId: requestVideoId,
@@ -977,39 +1630,40 @@ async function saveQuoteAsNote(quote, btn) {
     if (requestVideoId !== currentVideoId || !btn.isConnected) return;
 
     if (result?.success) {
-      setLocalActionFeedback(btn, {
-        state: "success",
-        label: `✓ ${t("overview.saved")}`,
-        message: t("overview.quoteSaved"),
-        ariaLabel: t("overview.quoteSavedAria"),
-      });
-      // Refresh notes list if on Notes tab
+      rememberSavedQuoteNote(result.note, saveKey);
+      setQuoteSaveButtonState(btn, true);
       loadNotes(requestVideoId);
     } else {
       console.error(
         "[YouTube Digest] Save quote as note failed:",
         result?.error,
       );
-      setLocalActionFeedback(btn, {
-        state: "error",
-        label: t("overview.retrySave"),
-        message: result?.error
+      setQuoteSaveButtonState(btn, false);
+      setQuoteSaveFeedback(
+        btn,
+        result?.error
           ? t("overview.saveQuoteFailedWithError", {
               error: localizeServiceError(result.error),
             })
           : t("overview.saveQuoteFailed"),
-        ariaLabel: t("overview.retrySaveQuote"),
-      });
+      );
     }
   } catch (error) {
-    console.error("[YouTube Digest] Save quote as note error:", error);
+    console.error(
+      `[YouTube Digest] ${removing ? "Remove quote note" : "Save quote as note"} error:`,
+      error,
+    );
     if (requestVideoId !== currentVideoId || !btn.isConnected) return;
-    setLocalActionFeedback(btn, {
-      state: "error",
-      label: t("overview.retrySave"),
-      message: t("overview.saveQuoteFailed"),
-      ariaLabel: t("overview.retrySaveQuote"),
-    });
+    setQuoteSaveButtonState(btn, !removing);
+    setQuoteSaveFeedback(
+      btn,
+      removing ? t("overview.removeQuoteFailed") : t("overview.saveQuoteFailed"),
+    );
+  } finally {
+    quoteSaveInFlight.delete(saveKey);
+    if (requestVideoId === currentVideoId && btn.isConnected) {
+      setQuoteSavePending(btn, false);
+    }
   }
 }
 
@@ -1062,7 +1716,7 @@ function renderTranscript() {
   // Show a small badge indicating the transcript came from the video's
   // existing subtitles. (We no longer AI-transcribe audio, so subtitles
   // are the only source.)
-  renderTranscriptSourceBadge("original", transcriptList);
+  renderTranscriptSourceBadge("original");
 
   // Group entries using smart sentence-boundary + time-guardrail logic
   const grouped = groupTranscriptEntries(currentTranscript);
@@ -1102,20 +1756,16 @@ function transcriptSourceBadgeCopy(mode) {
   return `${source} · ${modeCopy}`;
 }
 
-function renderTranscriptSourceBadge(mode, transcriptList) {
-  const existingBadge = document.getElementById("transcriptSourceBadge");
-  if (existingBadge) existingBadge.remove();
-  const badge = document.createElement("div");
-  badge.id = "transcriptSourceBadge";
-  badge.className = "transcript-source-badge";
-  badge.innerHTML = `<span class="source-dot source-dot--subs"></span> ${escapeHtml(transcriptSourceBadgeCopy(mode))}`;
-  transcriptList.parentElement.insertBefore(badge, transcriptList);
+function renderTranscriptSourceBadge(mode) {
+  const badge = document.getElementById("transcriptSourceBadge");
+  if (!badge) return;
+  badge.innerHTML = `<span class="source-dot source-dot--subs"></span><span class="transcript-source-copy">${escapeHtml(transcriptSourceBadgeCopy(mode))}</span>`;
 }
 
 function refreshTranscriptUiCopy() {
   const badge = document.getElementById("transcriptSourceBadge");
   if (badge) {
-    badge.innerHTML = `<span class="source-dot source-dot--subs"></span> ${escapeHtml(transcriptSourceBadgeCopy(currentTranscriptMode))}`;
+    badge.innerHTML = `<span class="source-dot source-dot--subs"></span><span class="transcript-source-copy">${escapeHtml(transcriptSourceBadgeCopy(currentTranscriptMode))}</span>`;
   }
   document.querySelectorAll(".transcript-time").forEach((button) => {
     const timestamp = button.textContent;
@@ -1135,6 +1785,21 @@ function refreshTranscriptUiCopy() {
   document.querySelectorAll(".translation-retry-btn").forEach((button) => {
     button.textContent = t("transcript.retry");
   });
+  document.querySelectorAll(".content-translation-pending").forEach((node) => {
+    node.textContent = t("contentTranslation.waiting");
+  });
+  document
+    .querySelectorAll(".content-translation-error-message")
+    .forEach((node) => {
+      node.textContent = t(
+        node.dataset.i18nError || "contentTranslation.failed",
+      );
+    });
+  document
+    .querySelectorAll(".content-translation-retry-btn")
+    .forEach((button) => {
+      button.textContent = t("contentTranslation.retry");
+    });
 }
 
 function copyTranscript() {
@@ -1170,7 +1835,7 @@ function exportTranscript() {
 // UI STATE MANAGEMENT
 // ============================================================
 
-function setTranscriptToolbarVisibility(visible) {
+function setContentToolbarVisibility(visible) {
   const toolbar = document.getElementById("transcriptToolbar");
   if (toolbar) toolbar.hidden = !visible;
 }
@@ -1195,10 +1860,7 @@ function showState(state) {
   document.getElementById("tabsNav").style.display =
     state === "results" ? "flex" : "none";
 
-  const activeTab = document.querySelector(".tab.active")?.dataset.tab;
-  setTranscriptToolbarVisibility(
-    state === "results" && activeTab === "transcript",
-  );
+  setContentToolbarVisibility(state === "results");
 
   if (state !== "results") {
     stopPlaybackTracking();
@@ -1261,6 +1923,7 @@ function renderConfigError(configStatus) {
 // ============================================================
 
 function switchTab(tabName) {
+  currentContentTab = tabName;
   document.querySelectorAll(".tab").forEach((tab) => {
     const active = tab.dataset.tab === tabName;
     tab.classList.toggle("active", active);
@@ -1274,7 +1937,7 @@ function switchTab(tabName) {
     panel.setAttribute("aria-hidden", String(!active));
   });
 
-  setTranscriptToolbarVisibility(tabName === "transcript");
+  setContentToolbarVisibility(true);
 
   // Start/stop playback tracking based on which tab is active
   if (tabName === "transcript") {
@@ -1284,12 +1947,17 @@ function switchTab(tabName) {
     }
   } else {
     stopTranscriptTranslationSession();
+    stopContentTranslationSession();
     stopPlaybackTracking();
   }
 
   // Lazy-load LLM analysis when user switches to Overview tab
   if (tabName === "overview" && !currentAnalysis && !isAnalysisLoading) {
     triggerAnalysis();
+  }
+
+  if (tabName !== "transcript") {
+    translateActiveContentSurface();
   }
 }
 
@@ -1859,20 +2527,330 @@ function getTranscriptContext(selectedText) {
 // CACHING
 // ============================================================
 
+function videoCacheStorageKey(videoId) {
+  return VIDEO_CACHE_PREFIX + String(videoId || "");
+}
+
+function estimateStorageValueBytes(key, value) {
+  return new TextEncoder().encode(
+    String(key) + JSON.stringify(value),
+  ).byteLength;
+}
+
+function normalizeVideoCacheIndex(value) {
+  if (
+    !value ||
+    value.version !== VIDEO_CACHE_INDEX_VERSION ||
+    !value.entries ||
+    typeof value.entries !== "object"
+  ) {
+    return null;
+  }
+
+  const entries = {};
+  Object.entries(value.entries).forEach(([videoId, entry]) => {
+    if (!entry || typeof entry !== "object") return;
+    const byteSize = Math.max(0, Number(entry.byteSize) || 0);
+    const lastAccessedAt = Math.max(0, Number(entry.lastAccessedAt) || 0);
+    entries[videoId] = { byteSize, lastAccessedAt };
+  });
+  return { version: VIDEO_CACHE_INDEX_VERSION, entries };
+}
+
+function buildVideoCacheIndex(allData) {
+  const entries = {};
+  Object.entries(allData || {}).forEach(([key, value]) => {
+    if (!key.startsWith(VIDEO_CACHE_PREFIX) || !value) return;
+    const videoId = key.slice(VIDEO_CACHE_PREFIX.length);
+    if (!videoId) return;
+    entries[videoId] = {
+      byteSize: estimateStorageValueBytes(key, value),
+      // Older records only have timestamp. It is intentionally retained as
+      // their first LRU position until the user opens that cached video.
+      lastAccessedAt: Math.max(
+        0,
+        Number(value.lastAccessedAt || value.timestamp) || 0,
+      ),
+    };
+  });
+  return { version: VIDEO_CACHE_INDEX_VERSION, entries };
+}
+
+async function loadVideoCacheIndex() {
+  const stored = await chrome.storage.local.get(VIDEO_CACHE_INDEX_STORAGE_KEY);
+  const index = normalizeVideoCacheIndex(
+    stored[VIDEO_CACHE_INDEX_STORAGE_KEY],
+  );
+  if (index) return index;
+
+  // This one-time scan migrates existing digest records without deleting them.
+  const allData = await chrome.storage.local.get(null);
+  const migrated = buildVideoCacheIndex(allData);
+  await chrome.storage.local.set({
+    [VIDEO_CACHE_INDEX_STORAGE_KEY]: migrated,
+  });
+  return migrated;
+}
+
+function totalVideoCacheBytes(entries) {
+  return Object.values(entries || {}).reduce(
+    (total, entry) => total + (Number(entry?.byteSize) || 0),
+    0,
+  );
+}
+
+function selectVideoCacheEvictions(entries, videoId, candidateByteSize) {
+  if (candidateByteSize > VIDEO_CACHE_BUDGET_BYTES) return null;
+
+  const currentByteSize = Number(entries?.[videoId]?.byteSize) || 0;
+  let projectedBytes =
+    totalVideoCacheBytes(entries) - currentByteSize + candidateByteSize;
+  if (projectedBytes <= VIDEO_CACHE_BUDGET_BYTES) return [];
+
+  const candidates = Object.entries(entries || {})
+    .filter(([candidateId]) => candidateId !== String(videoId))
+    .sort(([, left], [, right]) =>
+      Number(left.lastAccessedAt || 0) - Number(right.lastAccessedAt || 0),
+    );
+  const evictions = [];
+  for (const [candidateId, entry] of candidates) {
+    evictions.push(candidateId);
+    projectedBytes -= Number(entry.byteSize) || 0;
+    if (projectedBytes <= VIDEO_CACHE_BUDGET_BYTES) return evictions;
+  }
+  return null;
+}
+
+async function currentStorageByteSize(key, fallbackValue) {
+  if (typeof chrome.storage.local.getBytesInUse === "function") {
+    try {
+      return await chrome.storage.local.getBytesInUse(key);
+    } catch (_error) {
+      // The estimate remains a safe fallback for test and preview contexts.
+    }
+  }
+  return estimateStorageValueBytes(key, fallbackValue);
+}
+
+async function persistVideoCache(videoId, cacheData) {
+  if (!videoId || !cacheData) return false;
+
+  const id = String(videoId);
+  const storageKey = videoCacheStorageKey(id);
+  const estimatedByteSize = estimateStorageValueBytes(storageKey, cacheData);
+  const index = await loadVideoCacheIndex();
+  const evictions = selectVideoCacheEvictions(
+    index.entries,
+    id,
+    estimatedByteSize,
+  );
+  if (!evictions) {
+    debugLog("Video cache write skipped: entry exceeds the cache budget", id);
+    return false;
+  }
+
+  if (evictions.length) {
+    await chrome.storage.local.remove(evictions.map(videoCacheStorageKey));
+    evictions.forEach((evictedId) => delete index.entries[evictedId]);
+  }
+
+  try {
+    await chrome.storage.local.set({ [storageKey]: cacheData });
+  } catch (error) {
+    // User notes and settings are never sacrificed to make room for a cache.
+    console.warn("Video cache write rejected:", error);
+    return false;
+  }
+
+  index.entries[id] = {
+    byteSize: await currentStorageByteSize(storageKey, cacheData),
+    lastAccessedAt: Date.now(),
+  };
+  await chrome.storage.local.set({ [VIDEO_CACHE_INDEX_STORAGE_KEY]: index });
+  return true;
+}
+
+async function touchVideoCache(videoId, cached) {
+  if (!videoId || !cached) return;
+  try {
+    const id = String(videoId);
+    const storageKey = videoCacheStorageKey(id);
+    const index = await loadVideoCacheIndex();
+    index.entries[id] = {
+      byteSize: await currentStorageByteSize(storageKey, cached),
+      lastAccessedAt: Date.now(),
+    };
+    await chrome.storage.local.set({ [VIDEO_CACHE_INDEX_STORAGE_KEY]: index });
+  } catch (error) {
+    // A failed access update must not prevent a usable cached video rendering.
+    console.warn("Video cache access update failed:", error);
+  }
+}
+
+function readPersistentTranslationEntry(value) {
+  if (typeof value === "string") {
+    return { text: value };
+  }
+  if (!value || typeof value !== "object" || typeof value.text !== "string") {
+    return null;
+  }
+  if (value.version && value.version !== TRANSLATION_RULES_VERSION) {
+    return null;
+  }
+  return value;
+}
+
+function restoreContentTranslationsForVideo(videoId, cached) {
+  const translationCache = cached?.translationCache || {};
+  Object.entries(translationCache).forEach(([key, value]) => {
+    const entry = readPersistentTranslationEntry(value);
+    if (!entry?.text) return;
+    contentTranslationCache.set(key, entry.text);
+    contentTranslationMeta.set(key, {
+      ...entry,
+      key,
+      videoId: entry.videoId || videoId,
+    });
+  });
+
+  const legacyParagraphCache = cached?.paragraphCache || {};
+  Object.entries(legacyParagraphCache).forEach(([key, value]) => {
+    if (typeof value === "string" && value.trim()) {
+      contentTranslationCache.set(key, value);
+    }
+  });
+
+  // Existing releases stored Transcript translations without a source
+  // fingerprint. The cached Transcript is the source of truth for this
+  // digest, so migrate those values to the versioned content cache key.
+  groupTranscriptEntries(cached?.transcript || []).forEach((segment) => {
+    const legacyKey = legacyTranscriptTranslationCacheKeyForVideo(
+      videoId,
+      segment,
+    );
+    const legacyText = legacyParagraphCache[legacyKey];
+    if (!legacyText) return;
+    rememberContentTranslation(
+      createContentTranslationItem({
+        videoId,
+        contentType: "transcriptBatch",
+        id: segment.id,
+        text: segment.text,
+      }),
+      legacyText,
+    );
+  });
+}
+
+async function loadNotesTranslationCache() {
+  if (notesTranslationCacheLoaded) return;
+  try {
+    const stored = await chrome.storage.local.get(NOTES_TRANSLATION_STORAGE_KEY);
+    const translations = stored[NOTES_TRANSLATION_STORAGE_KEY] || {};
+    Object.entries(translations).forEach(([key, value]) => {
+      const entry = readPersistentTranslationEntry(value);
+      if (!entry?.text || entry.contentType !== "notesBatch") return;
+      contentTranslationCache.set(key, entry.text);
+      contentTranslationMeta.set(key, { ...entry, key });
+    });
+  } catch (error) {
+    console.error("Notes translation cache load error:", error);
+  } finally {
+    notesTranslationCacheLoaded = true;
+  }
+}
+
+function persistContentTranslationEntries(entries) {
+  const validEntries = entries.filter((entry) => entry?.text && entry?.key);
+  if (!validEntries.length) return Promise.resolve();
+
+  const videoGroups = new Map();
+  const noteEntries = [];
+  validEntries.forEach((entry) => {
+    if (entry.contentType === "notesBatch") {
+      noteEntries.push(entry);
+      return;
+    }
+    if (!entry.videoId) return;
+    if (!videoGroups.has(entry.videoId)) videoGroups.set(entry.videoId, []);
+    videoGroups.get(entry.videoId).push(entry);
+  });
+
+  const write = transcriptCacheWriteChain
+    .catch(() => {})
+    .then(async () => {
+      for (const [videoId, group] of videoGroups) {
+        const storageKey = videoCacheStorageKey(videoId);
+        const stored = await chrome.storage.local.get(storageKey);
+        const cached = stored[storageKey];
+        if (!cached) continue;
+
+        const translationCache = { ...(cached.translationCache || {}) };
+        const paragraphCache = { ...(cached.paragraphCache || {}) };
+        group.forEach((entry) => {
+          translationCache[entry.key] = {
+            ...entry.meta,
+            text: entry.text,
+          };
+          if (entry.contentType === "transcriptBatch") {
+            paragraphCache[entry.legacyKey || entry.key] = entry.text;
+          }
+        });
+        await persistVideoCache(videoId, {
+          ...cached,
+          translationCache,
+          paragraphCache,
+          timestamp: Date.now(),
+        });
+      }
+
+      if (noteEntries.length) {
+        const stored = await chrome.storage.local.get(
+          NOTES_TRANSLATION_STORAGE_KEY,
+        );
+        const translations = {
+          ...(stored[NOTES_TRANSLATION_STORAGE_KEY] || {}),
+        };
+        noteEntries.forEach((entry) => {
+          translations[entry.key] = {
+            ...entry.meta,
+            text: entry.text,
+          };
+        });
+        await chrome.storage.local.set({
+          [NOTES_TRANSLATION_STORAGE_KEY]: translations,
+        });
+      }
+    })
+    .catch((error) => {
+      console.error("Translation cache save error:", error);
+    });
+
+  transcriptCacheWriteChain = write;
+  return write;
+}
+
 /**
  * Saves the current digest results to persistent local storage.
  * Results survive browser restarts — reopening the same video loads from cache
- * without consuming API tokens or Supadata calls.
- * Cache expires after 30 days. Oldest entries evicted when > 20 videos cached.
+ * without consuming API tokens or Supadata calls. Video records are retained
+ * until the shared 6 MiB budget requires least-recently-used eviction.
  */
 async function saveToCache(videoId) {
   if (!videoId || !currentTranscript) return;
 
   try {
-    // Persist semantic-segment translations for this video.
+    // Persist all versioned Transcript and Overview translations for this video.
     const paragraphCacheForVideo = {};
-    for (const [key, value] of transcriptParagraphCache.entries()) {
-      if (key.startsWith(`${videoId}:`)) {
+    const translationCacheForVideo = {};
+    for (const [key, value] of contentTranslationCache.entries()) {
+      const meta = contentTranslationMeta.get(key);
+      if (meta?.videoId === videoId) {
+        translationCacheForVideo[key] = { ...meta, text: value };
+        if (meta.contentType === "transcriptBatch") {
+          paragraphCacheForVideo[meta.legacyKey || legacyTranscriptTranslationCacheKeyForVideo(videoId, { id: meta.itemId })] = value;
+        }
+      } else if (key.startsWith(String(videoId) + ":")) {
         paragraphCacheForVideo[key] = value;
       }
     }
@@ -1885,86 +2863,38 @@ async function saveToCache(videoId) {
       transcriptLanguage: currentTranscriptLanguage,
       videoTitle: currentVideoTitle,
       channelName: currentChannelName,
+      translationCache: translationCacheForVideo,
       paragraphCache: paragraphCacheForVideo,
       timestamp: Date.now(),
     };
 
-    await chrome.storage.local.set({ [`digest_${videoId}`]: cacheData });
-    debugLog(
-      "Saved to cache:",
-      videoId,
-      currentAnalysis ? "(with analysis)" : "(transcript only)",
-    );
-
-    // Evict old entries if we have more than 20 videos cached
-    await evictOldCacheEntries(20);
+    const saved = await persistVideoCache(videoId, cacheData);
+    if (saved) {
+      debugLog(
+        "Saved to cache:",
+        videoId,
+        currentAnalysis ? "(with analysis)" : "(transcript only)",
+      );
+    }
   } catch (error) {
     console.error("Cache save error:", error);
   }
 }
 
 /**
- * Keeps the cache from growing unbounded.
- * Removes the oldest entries when we exceed maxEntries videos.
- *
- * @param {number} maxEntries - Maximum number of cached videos to keep
- */
-async function evictOldCacheEntries(maxEntries) {
-  try {
-    const allData = await chrome.storage.local.get(null);
-    let digestKeys = Object.keys(allData).filter((k) =>
-      k.startsWith("digest_"),
-    );
-    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-    const expired = digestKeys.filter((key) => {
-      const timestamp = Number(allData[key]?.timestamp) || 0;
-      return Date.now() - timestamp > THIRTY_DAYS;
-    });
-    if (expired.length) {
-      await chrome.storage.local.remove(expired);
-      const expiredSet = new Set(expired);
-      digestKeys = digestKeys.filter((key) => !expiredSet.has(key));
-    }
-
-    if (digestKeys.length <= maxEntries) return;
-
-    // Sort by timestamp (oldest first) and remove excess
-    const sorted = digestKeys
-      .map((k) => ({ key: k, ts: allData[k]?.timestamp || 0 }))
-      .sort((a, b) => a.ts - b.ts);
-
-    const toRemove = sorted
-      .slice(0, sorted.length - maxEntries)
-      .map((e) => e.key);
-    if (toRemove.length > 0) {
-      await chrome.storage.local.remove(toRemove);
-      debugLog(`[YouTube Digest] Evicted ${toRemove.length} old cache entries`);
-    }
-  } catch (error) {
-    console.error("Cache eviction error:", error);
-  }
-}
-
-/**
  * Loads digest results from persistent local storage.
- * Returns null if not cached or expired (30-day expiry).
+ * Returns null only when no cache exists. Cache age does not invalidate it.
  */
 async function loadFromCache(videoId) {
   if (!videoId) return null;
 
   try {
-    const result = await chrome.storage.local.get(`digest_${videoId}`);
-    const cached = result[`digest_${videoId}`];
+    const storageKey = videoCacheStorageKey(videoId);
+    const result = await chrome.storage.local.get(storageKey);
+    const cached = result[storageKey];
 
     if (!cached) return null;
-
-    // Cache expires after 30 days
-    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-    if (Date.now() - cached.timestamp > THIRTY_DAYS) {
-      await chrome.storage.local.remove(`digest_${videoId}`);
-      return null;
-    }
-
+    await touchVideoCache(videoId, cached);
     return cached;
   } catch (error) {
     console.error("Cache load error:", error);
@@ -1994,6 +2924,9 @@ async function loadNotes(videoId) {
     if (requestGeneration !== notesRequestGeneration) return;
 
     if (result?.success) {
+      await loadNotesTranslationCache();
+      if (requestGeneration !== notesRequestGeneration) return;
+      syncSavedQuoteStatuses(result.notes, videoId);
       renderNotes(result.notes, videoId);
     }
   } catch (error) {
@@ -2013,6 +2946,7 @@ function renderNotes(notes, filteredVideoId) {
 
   renderedNotes = Array.isArray(notes) ? notes : [];
   renderedNotesFilter = filteredVideoId;
+  const notesTranslationItems = [];
 
   notesList.innerHTML = "";
 
@@ -2046,9 +2980,9 @@ function renderNotes(notes, filteredVideoId) {
         <button class="note-timestamp" type="button" aria-label="${escapeHtml(t("notes.openAt", { timestamp: note.timestamp }))}" data-url="${escapeHtml(note.timestampedUrl)}" data-seconds="${Number(note.timestampSeconds) || 0}">${escapeHtml(note.timestamp)}</button>
         ${!filteredVideoId ? `<span class="note-video-title">${escapeHtml(note.videoTitle)}</span>` : ""}
         <button class="note-delete" type="button" data-id="${escapeHtml(note.id)}" title="${escapeHtml(t("notes.delete"))}" aria-label="${escapeHtml(t("notes.delete"))}">✕</button>
-      </div>
-      <div class="note-text">"${escapeHtml(note.text)}"</div>
-      <div class="note-actions">
+     </div>
+      <div class="note-text"><span class="note-text-content"></span></div>
+     <div class="note-actions">
         <div class="note-action">
           <button class="note-action-btn note-copy-text" type="button">
             <svg class="lucide lucide-copy" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -2057,7 +2991,6 @@ function renderNotes(notes, filteredVideoId) {
             </svg>
             <span class="note-action-label">${escapeHtml(t("notes.copyText"))}</span>
           </button>
-          <span class="action-feedback note-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
         </div>
         <div class="note-action">
           <button class="note-action-btn note-copy-link" type="button" data-url="${escapeHtml(note.timestampedUrl)}">
@@ -2067,7 +3000,6 @@ function renderNotes(notes, filteredVideoId) {
             </svg>
             <span class="note-action-label">${escapeHtml(t("notes.copyTimestamp"))}</span>
           </button>
-          <span class="action-feedback note-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></span>
         </div>
         <div class="note-action">
           <button class="note-action-btn note-play" type="button" data-seconds="${Number(note.timestampSeconds) || 0}">
@@ -2079,9 +3011,19 @@ function renderNotes(notes, filteredVideoId) {
         </div>
       </div>
       <div class="note-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></div>
-    `;
+   `;
+    const noteTranslationItem = createContentTranslationItem({
+      videoId: note.videoId,
+      contentType: "notesBatch",
+      id: note.id,
+      text: note.text,
+      videoTitle: note.videoTitle,
+    });
+    noteTranslationItem.target = noteEl.querySelector(".note-text-content");
+    notesTranslationItems.push(noteTranslationItem);
+    renderContentTranslationItem(noteTranslationItem);
 
-    // Timestamp click - play from this point (in this tab or a new one)
+   // Timestamp click - play from this point (in this tab or a new one)
     noteEl.querySelector(".note-timestamp").addEventListener("click", () => {
       playNote(note);
     });
@@ -2104,6 +3046,7 @@ function renderNotes(notes, filteredVideoId) {
         if (!noteEl.isConnected) return;
 
         if (result?.success) {
+          forgetNoteTranslations(note.id);
           // The storage result is the deletion fact. Re-querying preserves the
           // existing empty-state and filter behavior after the card is removed.
           loadNotes(filteredVideoId);
@@ -2127,31 +3070,21 @@ function renderNotes(notes, filteredVideoId) {
       .querySelector(".note-copy-text")
       .addEventListener("click", async () => {
         const btn = noteEl.querySelector(".note-copy-text");
-        if (btn.disabled) return;
-        setLocalActionFeedback(btn, {
-          state: "pending",
-          label: t("notes.copying"),
-          message: t("notes.copyingText"),
-          ariaLabel: t("notes.copyingText"),
-        });
+        const copyKey = `${note.id}:text`;
+        if (noteCopyInFlight.has(copyKey)) return;
+        noteCopyInFlight.add(copyKey);
+        btn.setAttribute("aria-busy", "true");
         try {
           await navigator.clipboard.writeText(note.text);
           if (!btn.isConnected) return;
-          setLocalActionFeedback(btn, {
-            state: "success",
-            label: `✓ ${t("notes.copied")}`,
-            message: t("notes.textCopied"),
-            ariaLabel: t("notes.textCopiedAria"),
-          });
+          showSidePanelToast(t("notes.copyTextToast"));
         } catch (err) {
           console.error("Copy failed:", err);
           if (!btn.isConnected) return;
-          setLocalActionFeedback(btn, {
-            state: "error",
-            label: t("notes.retryCopy"),
-            message: t("notes.copyTextFailed"),
-            ariaLabel: t("notes.retryCopyText"),
-          });
+          showSidePanelToast(t("notes.copyTextFailed"));
+        } finally {
+          noteCopyInFlight.delete(copyKey);
+          if (btn.isConnected) btn.setAttribute("aria-busy", "false");
         }
       });
 
@@ -2160,32 +3093,21 @@ function renderNotes(notes, filteredVideoId) {
       .querySelector(".note-copy-link")
       .addEventListener("click", async () => {
         const btn = noteEl.querySelector(".note-copy-link");
-        if (btn.disabled) return;
-        setLocalActionFeedback(btn, {
-          state: "pending",
-          label: t("notes.copying"),
-          message: t("notes.copyingTimestamp"),
-          ariaLabel: t("notes.copyingTimestamp"),
-        });
+        const copyKey = `${note.id}:timestamp`;
+        if (noteCopyInFlight.has(copyKey)) return;
+        noteCopyInFlight.add(copyKey);
+        btn.setAttribute("aria-busy", "true");
         try {
           await navigator.clipboard.writeText(note.timestampedUrl);
           if (!btn.isConnected) return;
-          setLocalActionFeedback(btn, {
-            state: "success",
-            label: `✓ ${t("notes.copied")}`,
-            message: t("notes.timestampCopied"),
-            ariaLabel: t("notes.timestampCopiedAria"),
-          });
+          showSidePanelToast(t("notes.copyTimestampToast"));
         } catch (err) {
           console.error("Copy failed:", err);
           if (!btn.isConnected) return;
-          setLocalActionFeedback(btn, {
-            state: "error",
-            label: t("notes.retryCopy"),
-            message: t("notes.copyTimestampFailed"),
-            manualCopyText: note.timestampedUrl,
-            ariaLabel: t("notes.retryCopyTimestamp"),
-          });
+          showSidePanelToast(t("notes.copyTimestampFailed"));
+        } finally {
+          noteCopyInFlight.delete(copyKey);
+          if (btn.isConnected) btn.setAttribute("aria-busy", "false");
         }
       });
 
@@ -2194,8 +3116,12 @@ function renderNotes(notes, filteredVideoId) {
       playNote(note);
     });
 
-    notesList.appendChild(noteEl);
-  });
+   notesList.appendChild(noteEl);
+ });
+
+  if (currentContentTab === "notes" && currentTranscriptMode !== "original") {
+    startVisibleContentTranslation(notesTranslationItems);
+  }
 }
 
 function setNoteDeleteFeedback(noteEl, button, { state, label, message, ariaLabel }) {
@@ -2517,7 +3443,14 @@ function getActiveTranscriptSegments() {
 }
 
 function transcriptTranslationCacheKeyForVideo(videoId, segment) {
-  return `${videoId}:zh:semantic:${segment.id}`;
+  return getContentTranslationDescriptor(
+    createContentTranslationItem({
+      videoId,
+      contentType: "transcriptBatch",
+      id: segment.id,
+      text: segment.text,
+    }),
+  ).key;
 }
 
 function transcriptTranslationCacheKey(segment) {
@@ -2547,15 +3480,22 @@ async function handleTranscriptModeChange(mode) {
 
   currentTranscriptMode = mode;
   setTranscriptModeButtons(mode);
+  translationGeneration += 1;
+  stopTranscriptTranslationSession();
+  stopContentTranslationSession();
 
   if (mode === "original") {
-    translationGeneration += 1;
-    stopTranscriptTranslationSession();
-    renderTranscript();
+    if (currentContentTab === "transcript") renderTranscript();
+    if (currentContentTab === "overview" && currentAnalysis) {
+      renderAnalysisResults(currentAnalysis);
+    }
+    if (currentContentTab === "notes" && renderedNotes) {
+      renderNotes(renderedNotes, renderedNotesFilter);
+    }
     return;
   }
 
-  await translateTranscript();
+  await translateActiveContentSurface();
 }
 
 function renderTranscriptSegmentContent(segment, mode, translated, error) {
@@ -2586,14 +3526,18 @@ function renderTranscriptModeRows(segments, mode) {
   if (!transcriptList) return [];
   transcriptList.innerHTML = "";
 
-  renderTranscriptSourceBadge(mode, transcriptList);
+  renderTranscriptSourceBadge(mode);
 
   const rows = [];
   segments.forEach((segment, index) => {
     const div = document.createElement("div");
-    const cached = transcriptParagraphCache.get(
-      transcriptTranslationCacheKey(segment),
-    );
+    const translationItem = createContentTranslationItem({
+      videoId: currentVideoId,
+      contentType: "transcriptBatch",
+      id: segment.id,
+      text: segment.text,
+    });
+    const cached = getContentTranslationText(translationItem);
     div.className = `transcript-entry ${cached ? "translated" : "translating"}`;
     div.dataset.translationState = cached ? "complete" : "pending";
     div.dataset.seconds = segment.start;
@@ -2649,10 +3593,20 @@ function updateTranslatedRow(segment, index, alignedItem, generation) {
   );
   if (!row) return;
 
+  const translationItem = createContentTranslationItem({
+    videoId: currentVideoId,
+    contentType: "transcriptBatch",
+    id: segment.id,
+    text: segment.text,
+  });
   if (alignedItem.text) {
-    transcriptParagraphCache.set(
-      transcriptTranslationCacheKey(segment),
-      alignedItem.text,
+    rememberContentTranslation(translationItem, alignedItem.text);
+    setContentTranslationState(translationItem, "complete");
+  } else {
+    setContentTranslationState(
+      translationItem,
+      "error",
+      alignedItem.error || "Translation failed.",
     );
   }
 
@@ -2688,14 +3642,19 @@ function updateTranslatedRow(segment, index, alignedItem, generation) {
 
 let activeTranslationQueue = null;
 
-async function executeTranscriptTranslationBatch(videoId, sourceBatch, videoTitle) {
+async function executeContentTranslationBatch(
+  videoId,
+  sourceBatch,
+  videoTitle,
+  contentType,
+) {
   try {
     const result = await sendTranslationMessage({
       action: "translateContent",
       content: {
         segments: sourceBatch.map(({ id, text }) => ({ id, text })),
       },
-      contentType: "transcriptBatch",
+      contentType,
       targetLanguage: "zh",
       videoTitle,
     });
@@ -2719,31 +3678,53 @@ async function executeTranscriptTranslationBatch(videoId, sourceBatch, videoTitl
   }
 }
 
+async function executeTranscriptTranslationBatch(videoId, sourceBatch, videoTitle) {
+  return executeContentTranslationBatch(
+    videoId,
+    sourceBatch,
+    videoTitle,
+    "transcriptBatch",
+  );
+}
+
 /**
  * Reuses an already-running segment request when a mode/tab transition starts
  * a new translation session. This prevents a bilingual switch from sending
  * the same segment again while the Chinese request is still in flight.
  */
-function getTranscriptTranslationPromises(videoId, sourceBatch, videoTitle) {
+function getContentTranslationPromises(
+  videoId,
+  sourceBatch,
+  videoTitle,
+  contentType,
+) {
   const promisesByKey = new Map();
   const pending = [];
 
   sourceBatch.forEach((segment) => {
-    const key = transcriptTranslationCacheKeyForVideo(videoId, segment);
-    const existing = transcriptTranslationInFlight.get(key);
+    const item = createContentTranslationItem({
+      videoId: segment.videoId ?? videoId,
+      contentType: segment.contentType || contentType,
+      id: segment.id,
+      text: segment.text,
+      videoTitle,
+    });
+    const key = getContentTranslationDescriptor(item).key;
+    const existing = contentTranslationInFlight.get(key);
     if (existing) {
       promisesByKey.set(key, existing);
     } else {
-      pending.push({ key, segment });
+      pending.push({ key, segment, item });
     }
   });
 
   if (pending.length) {
     const pendingSegments = pending.map(({ segment }) => segment);
-    const operation = executeTranscriptTranslationBatch(
+    const operation = executeContentTranslationBatch(
       videoId,
       pendingSegments,
       videoTitle,
+      contentType,
     );
 
     pending.forEach(({ key }, index) => {
@@ -2757,17 +3738,36 @@ function getTranscriptTranslationPromises(videoId, sourceBatch, videoTitle) {
           },
         )
         .finally(() => {
-          if (transcriptTranslationInFlight.get(key) === segmentPromise) {
-            transcriptTranslationInFlight.delete(key);
+          if (contentTranslationInFlight.get(key) === segmentPromise) {
+            contentTranslationInFlight.delete(key);
           }
         });
-      transcriptTranslationInFlight.set(key, segmentPromise);
+      contentTranslationInFlight.set(key, segmentPromise);
       promisesByKey.set(key, segmentPromise);
     });
   }
 
   return sourceBatch.map((segment) =>
-    promisesByKey.get(transcriptTranslationCacheKeyForVideo(videoId, segment)),
+    promisesByKey.get(
+      getContentTranslationDescriptor(
+        createContentTranslationItem({
+          videoId: segment.videoId ?? videoId,
+          contentType: segment.contentType || contentType,
+          id: segment.id,
+          text: segment.text,
+          videoTitle,
+        }),
+      ).key,
+    ),
+  );
+}
+
+function getTranscriptTranslationPromises(videoId, sourceBatch, videoTitle) {
+  return getContentTranslationPromises(
+    videoId,
+    sourceBatch,
+    videoTitle,
+    "transcriptBatch",
   );
 }
 
@@ -2775,12 +3775,15 @@ function rememberTranscriptTranslations(videoId, sourceBatch, aligned) {
   const entries = [];
   aligned.forEach((item, index) => {
     if (!item?.text) return;
-    const key = transcriptTranslationCacheKeyForVideo(
+    const source = sourceBatch[index];
+    const translationItem = createContentTranslationItem({
       videoId,
-      sourceBatch[index],
-    );
-    transcriptParagraphCache.set(key, item.text);
-    entries.push({ key, text: item.text });
+      contentType: "transcriptBatch",
+      id: source.id,
+      text: source.text,
+    });
+    const entry = rememberContentTranslation(translationItem, item.text);
+    if (entry) entries.push(entry);
   });
   return entries;
 }
@@ -2791,33 +3794,12 @@ function rememberTranscriptTranslations(videoId, sourceBatch, aligned) {
  */
 function persistTranscriptTranslations(videoId, entries) {
   if (!videoId || !entries.length) return Promise.resolve();
-
-  const write = transcriptCacheWriteChain
-    .catch(() => {})
-    .then(async () => {
-      const storageKey = `digest_${videoId}`;
-      const stored = await chrome.storage.local.get(storageKey);
-      const cached = stored[storageKey];
-      if (!cached) return;
-
-      const paragraphCache = { ...(cached.paragraphCache || {}) };
-      entries.forEach(({ key, text }) => {
-        paragraphCache[key] = text;
-      });
-      await chrome.storage.local.set({
-        [storageKey]: {
-          ...cached,
-          paragraphCache,
-          timestamp: Date.now(),
-        },
-      });
-    })
-    .catch((error) => {
-      console.error("Translation cache save error:", error);
-    });
-
-  transcriptCacheWriteChain = write;
-  return write;
+  const normalizedEntries = entries.map((entry) => ({
+    ...entry,
+    videoId,
+    contentType: entry.contentType || "transcriptBatch",
+  }));
+  return persistContentTranslationEntries(normalizedEntries);
 }
 
 async function requestTranscriptTranslationBatch(
@@ -2888,6 +3870,33 @@ function retryTranslationSegment(index, generation) {
   activeTranslationQueue.enqueue(index, true);
 }
 
+async function translateActiveContentSurface() {
+  if (currentTranscriptMode === "original") {
+    if (currentContentTab === "transcript") {
+      renderTranscript();
+      return;
+    }
+    if (currentContentTab === "overview" && currentAnalysis) {
+      renderAnalysisResults(currentAnalysis);
+      return;
+    }
+    if (currentContentTab === "notes" && renderedNotes) {
+      renderNotes(renderedNotes, renderedNotesFilter);
+    }
+    return;
+  }
+  if (currentContentTab === "transcript") {
+    return translateTranscript();
+  }
+  if (currentContentTab === "overview" && currentAnalysis) {
+    renderAnalysisResults(currentAnalysis);
+    return;
+  }
+  if (currentContentTab === "notes" && renderedNotes) {
+    renderNotes(renderedNotes, renderedNotesFilter);
+  }
+}
+
 /**
  * Renders immediately, translates the current visible window, then observes
  * rows as they enter the window. Batches are sequential so the provider is
@@ -2903,6 +3912,23 @@ async function translateTranscript() {
   const mode = currentTranscriptMode;
   const videoTitle = currentVideoTitle;
   stopTranscriptTranslationSession();
+
+  const immediateEntries = [];
+  segments.forEach((segment) => {
+    const item = createContentTranslationItem({
+      videoId,
+      contentType: "transcriptBatch",
+      id: segment.id,
+      text: segment.text,
+    });
+    if (!getContentTranslationText(item) && isContentAlreadyChinese(item.text)) {
+      const entry = rememberContentTranslation(item, item.text);
+      if (entry) immediateEntries.push(entry);
+    }
+  });
+  if (immediateEntries.length) {
+    persistContentTranslationEntries(immediateEntries);
+  }
 
   const rows = renderTranscriptModeRows(segments, mode);
   const queue = [];
@@ -2932,8 +3958,13 @@ async function translateTranscript() {
       queued.delete(index);
       if (!eligible.has(index)) continue;
       if (
-        transcriptParagraphCache.has(
-          transcriptTranslationCacheKeyForVideo(videoId, segments[index]),
+        getContentTranslationText(
+          createContentTranslationItem({
+            videoId,
+            contentType: "transcriptBatch",
+            id: segments[index].id,
+            text: segments[index].text,
+          }),
         )
       ) {
         continue;
@@ -2970,8 +4001,15 @@ async function translateTranscript() {
   const enqueue = (index, force = false) => {
     if (stopped || !Number.isInteger(index) || !segments[index]) return;
     if (!eligible.has(index)) return;
-    const cached = transcriptParagraphCache.has(
-      transcriptTranslationCacheKeyForVideo(videoId, segments[index]),
+    const cached = Boolean(
+      getContentTranslationText(
+        createContentTranslationItem({
+          videoId,
+          contentType: "transcriptBatch",
+          id: segments[index].id,
+          text: segments[index].text,
+        }),
+      ),
     );
     if ((!force && cached) || queued.has(index)) return;
     queue.push(index);
@@ -3032,12 +4070,25 @@ function setTranslatingSpinner(show) {
 // not read this object at runtime.
 globalThis.__YTD_TRANSCRIPT_TESTING__ = {
   sendTranslationMessage,
+  hashContentText,
+  createContentTranslationItem,
+  getContentTranslationDescriptor,
+  videoCacheStorageKey,
+  estimateStorageValueBytes,
+  buildVideoCacheIndex,
+  normalizeVideoCacheIndex,
+  selectVideoCacheEvictions,
+  VIDEO_CACHE_BUDGET_BYTES,
+  renderContentTranslationMarkup,
+  isContentAlreadyChinese,
   groupTranscriptEntries,
   splitOversizedThought,
   alignTranslatedSegmentBatch,
   transcriptTranslationCacheKeyForVideo,
   getTranscriptTranslationPromises,
+  getContentTranslationPromises,
   persistTranscriptTranslations,
+  persistContentTranslationEntries,
   renderSubtitleInlineMarkup,
   renderTranscriptSegmentContent,
 };
