@@ -157,6 +157,18 @@
   --comp-icon-button-size: var(--sys-icon-hit-area);
   --comp-status-message-bg: var(--sys-surface-canvas);
   --comp-toast-bg: var(--sys-surface-canvas);
+  --comp-explain-overlay-scrim: var(--sys-overlay-scrim);
+  --comp-explain-overlay-padding: var(--sys-layout-panel-inset);
+  --comp-explain-surface: var(--sys-surface-canvas);
+  --comp-explain-border: var(--sys-border-default);
+  --comp-explain-radius: var(--sys-shape-overlay);
+  --comp-explain-padding: var(--sys-layout-card-padding-compact);
+  --comp-explain-max-width: 480px;
+  --comp-explain-max-height: min(640px, calc(100vh - 32px));
+  --comp-explain-selected-surface: var(--sys-state-info-surface);
+  --comp-explain-selected-border: var(--sys-state-info-border);
+  --comp-explain-selected-foreground: var(--sys-text-secondary);
+  --comp-explain-close-foreground: var(--sys-text-secondary);
 
   /* Compatibility aliases keep the existing selectors stable during 01.
      Each alias terminates in a sys.* or comp.* token, never a ref.* token. */
@@ -1627,6 +1639,8 @@ body {
 .explain-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: var(--sys-layout-inline-gap);
   min-height: var(--comp-icon-button-size);
   padding: 0 var(--sys-layout-card-padding-compact);
   background: var(--sys-action-primary-bg);
@@ -1635,8 +1649,18 @@ body {
   border-radius: var(--sys-shape-pill);
   cursor: pointer;
   font: var(--sys-type-label);
-  box-shadow: var(--sys-elevation-overlay);
+  box-shadow: var(--sys-elevation-raised);
   transition: background 0.18s ease;
+}
+
+.explain-btn svg {
+  width: var(--sys-icon-size-small);
+  height: var(--sys-icon-size-small);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .explain-btn:hover:not(:disabled) {
@@ -1646,22 +1670,21 @@ body {
 .explain-modal-overlay {
   position: fixed;
   inset: 0;
-  background: var(--sys-overlay-scrim);
-  backdrop-filter: blur(3px);
+  background: var(--comp-explain-overlay-scrim);
   z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--sys-layout-card-padding-comfortable);
+  padding: var(--comp-explain-overlay-padding);
 }
 
 .explain-modal {
   width: 100%;
-  max-width: 400px;
-  max-height: 80vh;
-  background: var(--comp-card-bg);
-  border: 1px solid var(--sys-border-default);
-  border-radius: var(--sys-shape-overlay);
+  max-width: var(--comp-explain-max-width);
+  max-height: var(--comp-explain-max-height);
+  background: var(--comp-explain-surface);
+  border: 1px solid var(--comp-explain-border);
+  border-radius: var(--comp-explain-radius);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1673,14 +1696,14 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--sys-layout-control-gap);
-  padding: var(--comp-card-padding);
+  padding: var(--comp-explain-padding);
   border-bottom: 1px solid var(--sys-border-default);
-  background: var(--sys-surface-subtle);
+  background: var(--comp-explain-surface);
 }
 
 .explain-modal-title {
   color: var(--sys-text-primary);
-  font: var(--sys-type-heading);
+  font: var(--sys-type-title);
 }
 
 .explain-modal-close {
@@ -1690,13 +1713,23 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--sys-shape-pill);
-  color: var(--sys-text-secondary);
+  background: var(--sys-surface-control);
+  border: 0;
+  border-radius: var(--sys-shape-control);
+  color: var(--comp-explain-close-foreground);
   cursor: pointer;
-  font-size: 16px;
+  flex-shrink: 0;
   transition: background 0.18s ease, color 0.18s ease;
+}
+
+.explain-modal-close svg {
+  width: var(--sys-icon-size-large);
+  height: var(--sys-icon-size-large);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .explain-modal-close:hover:not(:disabled) {
@@ -1705,18 +1738,29 @@ body {
 }
 
 .explain-selected-text {
-  padding: var(--comp-card-padding);
-  background: var(--sys-state-info-surface);
-  border-bottom: 1px solid var(--sys-state-info-border);
-  color: var(--sys-text-secondary);
+  padding: var(--comp-explain-padding);
+  background: var(--comp-explain-selected-surface);
+  border-bottom: 1px solid var(--comp-explain-selected-border);
+  color: var(--comp-explain-selected-foreground);
   font: var(--sys-type-body);
   font-style: italic;
   overflow-wrap: anywhere;
 }
 
+.explain-selected-text::before {
+  content: "\201C";
+  color: var(--sys-brand-mark);
+  font-family: var(--sys-font-ui);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 0;
+  margin-right: 4px;
+  vertical-align: -5px;
+}
+
 .explain-modal-content {
   min-height: 0;
-  padding: var(--comp-card-padding);
+  padding: var(--comp-explain-padding);
   overflow-y: auto;
   flex: 1;
   overflow-wrap: anywhere;
@@ -1726,15 +1770,15 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sys-layout-inline-gap);
-  padding: var(--sys-layout-card-padding-comfortable) 0;
+  padding: var(--comp-explain-padding) 0;
   color: var(--sys-text-secondary);
   font: var(--sys-type-body);
 }
 
 .explain-loading-indicator {
   display: inline-flex;
-  width: 20px;
-  height: 20px;
+  width: var(--sys-icon-size-large);
+  height: var(--sys-icon-size-large);
   align-items: center;
   justify-content: center;
   border: 1px solid var(--sys-state-info-border);
@@ -1755,7 +1799,7 @@ body {
 
 .explain-error {
   color: var(--sys-state-error-foreground);
-  padding: var(--comp-card-padding);
+  padding: var(--comp-explain-padding);
   border: 1px solid var(--sys-state-error-border);
   border-radius: var(--sys-shape-control);
   background: var(--sys-state-error-surface);

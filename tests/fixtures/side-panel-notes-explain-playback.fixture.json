@@ -27,7 +27,17 @@
     "states": ["loading", "success", "error"],
     "close": "Close removes only the visual modal; it does not cancel the request.",
     "retry": "Retry explanation",
-    "staleResponse": "A closed modal or an outdated video cannot receive a late response."
+    "staleResponse": "A closed modal or an outdated video cannot receive a late response.",
+    "design": {
+      "surface": "side-panel-modal",
+      "maxWidth": "480px",
+      "maxHeight": "min(640px, calc(100vh - 32px))",
+      "overlayPadding": "16px",
+      "dialogRadius": "16px",
+      "closeHitArea": "36px",
+      "selectedTextSurface": "info",
+      "actionsUseLucide": true
+    }
   },
   "playback": {
     "active": "Playback location uses a current row marker, time label, and play indicator.",

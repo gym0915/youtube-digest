@@ -265,6 +265,45 @@ test("DS-07 makes Explain a retryable dialog without cancelling or accepting sta
   assert.match(css, /\.explain-modal-close\s*\{[^}]*width:\s*var\(--comp-icon-button-size\);/);
 });
 
+test("DS-07 aligns the Explain presentation with the side-panel design system", () => {
+  assert.deepEqual(notesExplainPlaybackFixture.explain.design, {
+    surface: "side-panel-modal",
+    maxWidth: "480px",
+    maxHeight: "min(640px, calc(100vh - 32px))",
+    overlayPadding: "16px",
+    dialogRadius: "16px",
+    closeHitArea: "36px",
+    selectedTextSurface: "info",
+    actionsUseLucide: true,
+  });
+
+  const explainSource = js.slice(
+    js.indexOf("function setupExplainFeature"),
+    js.indexOf("function invalidateExplanationPresentation"),
+  );
+  const modalSource = js.slice(
+    js.indexOf("async function showExplanation"),
+    js.indexOf("function explanationPresentationIsCurrent"),
+  );
+  assert.match(explainSource, /lucide-lightbulb/);
+  assert.match(modalSource, /lucide-x/);
+  assert.match(modalSource, /class="explain-selected-text">\s*<span class="explain-selected-text-content">/);
+  assert.doesNotMatch(explainSource, /💡/);
+  assert.doesNotMatch(modalSource, />✕<|selectedText\.length > 200 \? "\.\.\."/);
+
+  assert.match(css, /--comp-explain-surface:\s*var\(--sys-surface-canvas\);/);
+  assert.match(css, /--comp-explain-selected-surface:\s*var\(--sys-state-info-surface\);/);
+  assert.match(css, /\.explain-modal-overlay\s*\{[^}]*padding:\s*var\(--comp-explain-overlay-padding\);/);
+  assert.match(css, /\.explain-modal\s*\{[^}]*max-width:\s*var\(--comp-explain-max-width\);[^}]*max-height:\s*var\(--comp-explain-max-height\);[^}]*background:\s*var\(--comp-explain-surface\);[^}]*border-radius:\s*var\(--comp-explain-radius\);/);
+  assert.match(css, /\.explain-modal-header\s*\{[^}]*padding:\s*var\(--comp-explain-padding\);[^}]*background:\s*var\(--comp-explain-surface\);/);
+  assert.match(css, /\.explain-modal-title\s*\{[^}]*font:\s*var\(--sys-type-title\);/);
+  assert.match(css, /\.explain-modal-close\s*\{[^}]*border-radius:\s*var\(--sys-shape-control\);/);
+  assert.match(css, /--comp-explain-close-foreground:\s*var\(--sys-text-secondary\);/);
+  assert.match(css, /\.explain-modal-close\s*\{[^}]*color:\s*var\(--comp-explain-close-foreground\);/);
+  assert.match(css, /\.explain-selected-text\s*\{[^}]*background:\s*var\(--comp-explain-selected-surface\);[^}]*border-bottom:\s*1px solid var\(--comp-explain-selected-border\);/);
+  assert.match(css, /\.explain-selected-text::before\s*\{[^}]*content:\s*"\\201C"[^}]*color:\s*var\(--sys-brand-mark\);/);
+});
+
 test("DS-07 keeps playback position distinct from following state", () => {
   assert.match(html, /id="followPlaybackBtn"[\s\S]*data-i18n-aria-label="follow\.resume"[\s\S]*lucide-locate-fixed/);
   assert.match(html, /id="followPlaybackStatus"[\s\S]*role="status"[\s\S]*aria-live="polite"/);

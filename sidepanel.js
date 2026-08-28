@@ -2267,7 +2267,16 @@ function setupExplainFeature() {
   const tooltip = document.createElement("div");
   tooltip.id = "explainTooltip";
   tooltip.className = "explain-tooltip";
-  tooltip.innerHTML = `<button class="explain-btn" type="button">💡 ${escapeHtml(t("explain.action"))}</button>`;
+  tooltip.innerHTML = `
+    <button class="explain-btn" type="button">
+      <svg class="lucide lucide-lightbulb" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M9 18h6" />
+        <path d="M10 22h4" />
+        <path d="M15.09 14c.18-.92.66-1.72 1.41-2.41A6 6 0 1 0 7.5 11.5c.66.68 1.18 1.51 1.41 2.5" />
+      </svg>
+      <span>${escapeHtml(t("explain.action"))}</span>
+    </button>
+  `;
   tooltip.style.display = "none";
   document.body.appendChild(tooltip);
 
@@ -2376,9 +2385,14 @@ async function showExplanation(selectedText) {
     <div class="explain-modal" role="dialog" aria-modal="true" aria-labelledby="explainModalTitle" aria-describedby="explanationContent">
       <div class="explain-modal-header">
         <div class="explain-modal-title" id="explainModalTitle">${escapeHtml(t("explain.action"))}</div>
-        <button class="explain-modal-close" id="closeExplain" type="button" aria-label="${escapeHtml(t("explain.close"))}" title="${escapeHtml(t("explain.close"))}">✕</button>
+        <button class="explain-modal-close" id="closeExplain" type="button" aria-label="${escapeHtml(t("explain.close"))}" title="${escapeHtml(t("explain.close"))}">
+          <svg class="lucide lucide-x" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
       </div>
-      <div class="explain-selected-text">"${escapeHtml(selectedText.substring(0, 200))}${selectedText.length > 200 ? "..." : ""}"</div>
+      <div class="explain-selected-text"><span class="explain-selected-text-content">${escapeHtml(selectedText.substring(0, 200))}</span>${selectedText.length > 200 ? "…" : ""}</div>
       <div class="explain-modal-content" id="explanationContent"></div>
     </div>
   `;
